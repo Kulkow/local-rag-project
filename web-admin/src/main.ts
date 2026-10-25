@@ -1,0 +1,10 @@
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import { createRouter, createWebHistory } from 'vue-router';
+import PrimeVue from 'primevue/config';
+import Aura from '@primevue/themes/aura';
+import App from './App.vue';
+import Dashboard from './Dashboard.vue';
+import './style.css';
+const router = createRouter({ history: createWebHistory(), routes: [{path: '/', component: Dashboard}, {path: '/:pathMatch(.*)*', redirect: '/'}] });
+createApp(App).use(createPinia()).use(router).use(PrimeVue, {theme: {preset: Aura}}).mount('#app');

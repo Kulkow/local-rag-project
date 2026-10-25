@@ -1,0 +1,22 @@
+[project]
+name = "enterprise-rag"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["fastapi==0.115.6", "uvicorn==0.34.0", "pydantic-settings==2.7.1", "sqlalchemy[asyncio]==2.0.36", "asyncpg==0.30.0", "alembic==1.14.0", "httpx==0.28.1", "redis==5.2.1", "celery==5.4.0"]
+[dependency-groups]
+dev = ["pytest==8.3.4", "pytest-asyncio==0.25.2", "ruff==0.9.1", "mypy==1.14.1", "pre-commit==4.0.1"]
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+[tool.ruff.lint]
+# Include pyupgrade checks for deprecated imports and obsolete Python constructs.
+extend-select = ["UP"]
+[tool.mypy]
+strict = true
+mypy_path = "src"
+[[tool.mypy.overrides]]
+module = "celery.*"
+ignore_missing_imports = true

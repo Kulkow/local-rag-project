@@ -1,0 +1,20 @@
+name: checks
+on: [push, pull_request]
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure isolated CI credentials
+        run: |
+          cp .env.example .env
+          echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+          echo "MINIO_ROOT_USER=ci-admin" >> .env
+          echo "MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)" >> .env
+          echo "ADMIN_USERNAME=ci-admin" >> .env
+          echo "ADMIN_PASSWORD=$(openssl rand -hex 24)" >> .env
+      - run: make lock
+      - run: docker compose up -d postgres
+      - run: make check
+      - if: always()
+        run: docker compose down

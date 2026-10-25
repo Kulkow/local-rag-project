@@ -1,0 +1,129 @@
+name: enterprise-rag
+x-app: &app
+  image: enterprise-rag-api:local
+  build: {context: ., target: runtime}
+  restart: unless-stopped
+  mem_limit: 512m
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  environment: &app-env
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rag}
+    ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME in .env}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+    REDIS_URL: redis://redis:6379/0
+    QDRANT_URL: http://qdrant:6333
+    MINIO_URL: http://minio:9000
+    OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    CHAT_MODEL: ${CHAT_MODEL:-qwen3:4b}
+    EMBEDDING_MODEL: ${EMBEDDING_MODEL:-embeddinggemma:latest}
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4.1-alpine
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 192mb, --maxmemory-policy, noeviction]
+    restart: unless-stopped
+    mem_limit: 256m
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    restart: unless-stopped
+    mem_limit: 1g
+    volumes: [qdrant-data:/qdrant/storage]
+  minio:
+    image: enterprise-rag-minio:local
+    build: {context: ./infra/minio, target: runtime}
+    command: server /data --console-address ':9001'
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    ports: ['127.0.0.1:9001:9001']
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:9000/minio/health/ready]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+  migrate:
+    <<: *app
+    restart: 'no'
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    <<: *app
+    ports: ['127.0.0.1:8000:8000']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      qdrant: {condition: service_started}
+      minio: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -m, app.smoke]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+  worker:
+    <<: *app
+    command: [celery, -A, app.infrastructure.queue.tasks:celery_app, worker, --loglevel=WARNING, --concurrency=1]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'celery -A app.infrastructure.queue.tasks:celery_app inspect ping --destination "celery@$$HOSTNAME" --timeout 5']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  web-admin:
+    build: ./web-admin
+    restart: unless-stopped
+    mem_limit: 128m
+    ports: ['127.0.0.1:3000:8080']
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+  checks:
+    <<: *app
+    profiles: [tools]
+    build: {context: ., target: checks}
+    image: enterprise-rag-checks:local
+    restart: 'no'
+    environment:
+      <<: *app-env
+      TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rag}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  web-checks:
+    profiles: [tools]
+    build: {context: ./web-admin, target: builder}
+    command: [sh, -c, 'npx openapi-typescript openapi.json -o src/schema.ts && npm test && npm run build']
+    restart: 'no'
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+  minio-data:

@@ -1,0 +1,1 @@
+<template><div class="shell"><aside><div class="brand">◈ RAG Platform</div><p class="eyebrow">OPERATIONS / LOCAL</p><nav aria-label="Main navigation"><RouterLink to="/">◉ Service dashboard</RouterLink></nav><p class="roadmap">Phase 1 · Foundation<br>Documents, retrieval and evaluation will be added in subsequent phases.</p></aside><main><RouterView /></main></div></template>

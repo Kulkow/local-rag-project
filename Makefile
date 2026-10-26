@@ -7,7 +7,7 @@ down:
 	docker compose down
 check:
 	docker compose --profile tools run --build --rm checks
-	docker compose --profile tools run --rm -v "$(CURDIR)/web-admin:/app/web-admin" checks python scripts/export_openapi.py
+	docker compose --profile tools run --rm -v "$(CURDIR)/web-admin:/app/web-admin" checks uv run --frozen python scripts/export_openapi.py
 	docker compose --profile tools run --build --rm web-checks
 smoke:
 	docker compose exec -T api python -m app.smoke
@@ -20,3 +20,7 @@ lock:
 
 lint-python:
 	docker compose --profile tools run --build --rm --no-deps checks uv run --frozen ruff check src migrations scripts tests
+
+.PHONY: bootstrap-admin
+bootstrap-admin:
+	docker compose run --rm --no-deps api python -m app.modules.identity.bootstrap

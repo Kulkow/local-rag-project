@@ -13,7 +13,9 @@ def configure(connection: Connection) -> None:
 
 
 async def migrate() -> None:
-    engine = create_async_engine(Settings().database_url.get_secret_value(), poolclass=pool.NullPool)
+    engine = create_async_engine(
+        Settings().database_url.get_secret_value(), poolclass=pool.NullPool
+    )
     async with engine.connect() as connection:
         await connection.run_sync(configure)
     await engine.dispose()

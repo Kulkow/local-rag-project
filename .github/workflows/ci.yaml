@@ -11,6 +11,7 @@ jobs:
           echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
           echo "MINIO_ROOT_USER=ci-admin" >> .env
           echo "MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)" >> .env
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
           echo "ADMIN_USERNAME=ci-admin" >> .env
           echo "ADMIN_PASSWORD=$(openssl rand -hex 24)" >> .env
       - run: make lock

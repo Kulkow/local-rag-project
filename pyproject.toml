@@ -2,12 +2,13 @@
 name = "enterprise-rag"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi==0.115.6", "uvicorn==0.34.0", "pydantic-settings==2.7.1", "sqlalchemy[asyncio]==2.0.36", "asyncpg==0.30.0", "alembic==1.14.0", "httpx==0.28.1", "redis==5.2.1", "celery==5.4.0"]
+dependencies = ["fastapi==0.115.6", "uvicorn==0.34.0", "pydantic-settings==2.7.1", "sqlalchemy[asyncio]==2.0.36", "asyncpg==0.30.0", "alembic==1.14.0", "httpx==0.28.1", "redis==5.2.1", "celery==5.4.0", "PyJWT==2.10.1", "boto3==1.40.76", "pypdf==6.21.2"]
 [dependency-groups]
 dev = ["pytest==8.3.4", "pytest-asyncio==0.25.2", "ruff==0.9.1", "mypy==1.14.1", "pre-commit==4.0.1"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -15,8 +16,13 @@ target-version = "py312"
 # Include pyupgrade checks for deprecated imports and obsolete Python constructs.
 extend-select = ["UP"]
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 strict = true
 mypy_path = "src"
 [[tool.mypy.overrides]]
 module = "celery.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true

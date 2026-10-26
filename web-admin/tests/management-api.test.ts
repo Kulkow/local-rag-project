@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { request, createFamily } from '../src/management-api';
+import { request } from '../src/shared/infrastructure/http';
+import { createFamily } from '../src/modules/families/infrastructure/api';
 afterEach(() => vi.unstubAllGlobals());
 it('sends bearer authentication to the family API', async () => {
  const fetch = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ id: 'family', name: 'Synthetic' }) }); vi.stubGlobal('fetch', fetch);

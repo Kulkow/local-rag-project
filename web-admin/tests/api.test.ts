@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { getReadiness } from '../src/api';
+import { getReadiness } from '../src/modules/operations/infrastructure/basic-readiness';
 afterEach(() => vi.unstubAllGlobals());
 it('reports authentication failure', async () => {
  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({status: 401}));

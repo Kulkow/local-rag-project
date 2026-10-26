@@ -24,6 +24,8 @@ x-app: &app
     CHUNK_OVERLAP: ${CHUNK_OVERLAP:-150}
     EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
     MAX_DOCUMENT_CHUNKS: ${MAX_DOCUMENT_CHUNKS:-2000}
+    RAG_RERANKING: ${RAG_RERANKING:-true}
+    RAG_QUERY_REWRITING: ${RAG_QUERY_REWRITING:-true}
     RAG_MIN_VECTOR_SCORE: ${RAG_MIN_VECTOR_SCORE:-0.35}
 services:
   postgres:
@@ -181,7 +183,7 @@ services:
   web-checks:
     profiles: [tools]
     build: {context: ./web-admin, target: builder}
-    command: [sh, -c, 'npx openapi-typescript openapi.json -o src/schema.ts && npm test && npm run build']
+    command: [sh, -c, 'npx openapi-typescript openapi.json -o src/shared/infrastructure/schema.ts && npm test && npm run build']
     restart: 'no'
 volumes:
   postgres-data:

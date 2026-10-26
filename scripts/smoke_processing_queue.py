@@ -125,6 +125,19 @@ async def main() -> None:
                 await asyncio.sleep(1)
             assert [s["status"] for s in states] == ["succeeded", "succeeded", "failed"], states
             assert states[2]["attempts"] == 1 and states[2]["error_code"] == "invalid"
+            metadata = await client.get("/documents", params={"family_id": str(family_id)})
+            assert metadata.status_code == 200
+            titles = {item["id"]: item["title"] for item in metadata.json()}
+            assert all(
+                titles[id]
+                and titles[id].startswith("Synthetic queue evidence.")
+                and len(titles[id]) <= 255
+                for id in ids[:2]
+            )
+            assert titles[ids[2]] is None
+            print(
+                "Worker persists transcript-derived titles; failed extraction keeps title null: passed"
+            )
             ordered = sorted(states, key=lambda s: s["started_at"])
             assert all(b["started_at"] >= a["finished_at"] for a, b in zip(ordered, ordered[1:]))
             for id in ids[:2]:
@@ -178,6 +191,7 @@ async def main() -> None:
             for mode, question in [
                 ("keyword", "ORION retention"),
                 ("vector", "What is the retention period for project ORION?"),
+                ("hybrid", "ORION retention period"),
             ]:
                 response = await client.post(
                     "/rag/ask",
@@ -196,6 +210,9 @@ async def main() -> None:
                     source["document_id"] in ids[:2] for source in answer["citations"]
                 )
                 assert answer["trace_id"] == response.headers["X-Request-ID"]
+                if mode == "hybrid":
+                    assert "rrf_ms" in answer["timings"]
+                    assert type(answer["reranked"]) is bool
             response = await client.post(
                 "/rag/ask",
                 json={
@@ -206,6 +223,8 @@ async def main() -> None:
                 timeout=85,
             )
             assert response.json()["abstained"] and response.json()["retrieved_chunks"] == []
+            assert response.json()["reason"] == "no_evidence"
+            assert "не нашёл подходящих фрагментов" in response.json()["answer"]
             proxy_response = await client.post(
                 "http://web-admin:8080/api/rag/search",
                 json={
@@ -222,9 +241,26 @@ async def main() -> None:
             assert original.headers["Content-Disposition"].startswith("attachment;")
             assert original.headers["Cache-Control"] == "no-store"
             print("Authorized source download through Nginx matches original PDF bytes: passed")
+            metrics_response = await client.get("/internal/metrics")
+            assert metrics_response.status_code == 200
+            assert 'stage="vector_search"' in metrics_response.text
+            assert 'stage="keyword_search"' in metrics_response.text
+            assert 'stage="generation"' in metrics_response.text
+            assert 'outcome="abstained"' in metrics_response.text
+            assert not any(id in metrics_response.text for id in ids)
+            assert (
+                "ORION" not in metrics_response.text
+                and "synthetic-0.pdf" not in metrics_response.text
+            )
+            assert (
+                await client.get("http://web-admin:8080/api/internal/metrics")
+            ).status_code == 404
+            print(
+                "RAG stage histograms, outcomes, privacy and blocked browser metrics proxy: passed"
+            )
             print("Web Admin SPA route and authenticated Nginx RAG proxy: passed")
             print(
-                "Live keyword/vector RAG, local chat answer with citations and no-evidence abstention: passed"
+                "Live keyword/vector/hybrid RAG, local chat answer with citations and no-evidence abstention: passed"
             )
             print(
                 "Live chunk catalog, Ollama embeddings, Qdrant vectors and duplicate-free reindex: passed"
@@ -248,6 +284,19 @@ async def main() -> None:
                     break
                 await asyncio.sleep(1)
             assert data and data[0]["value"][1] == "1"
+            for _ in range(30):
+                query = await client.get(
+                    "http://prometheus:9090/api/v1/query",
+                    params={
+                        "query": 'sum(rag_stage_duration_seconds_count{stage="vector_search"})'
+                    },
+                )
+                rag_data = query.json()["data"]["result"]
+                if rag_data and float(rag_data[0]["value"][1]) >= 1:
+                    break
+                await asyncio.sleep(1)
+            assert rag_data and float(rag_data[0]["value"][1]) >= 1
+            print("Actual Prometheus scrape contains executed RAG stages: passed")
             print("Exporter heartbeat/privacy and actual Prometheus scrape: passed")
             response = await client.get(
                 "http://grafana:3000/api/dashboards/uid/document-processing",
@@ -259,6 +308,27 @@ async def main() -> None:
             assert response.status_code == 200, response.status_code
             assert len(response.json()["dashboard"]["panels"]) == 9
             print("Authenticated provisioned Grafana dashboard: passed")
+            response = await client.get(
+                "http://grafana:3000/api/dashboards/uid/rag-performance",
+                auth=(
+                    os.getenv("GRAFANA_ADMIN_USER") or config.admin_username,
+                    os.getenv("GRAFANA_ADMIN_PASSWORD") or config.admin_password.get_secret_value(),
+                ),
+            )
+            assert response.status_code == 200
+            assert any(
+                "rag_stage_duration_seconds_bucket" in target.get("expr", "")
+                for panel in response.json()["dashboard"]["panels"]
+                for target in panel.get("targets", [])
+            )
+            for panel in response.json()["dashboard"]["panels"]:
+                for target in panel.get("targets", []):
+                    query = await client.get(
+                        "http://prometheus:9090/api/v1/query", params={"query": target["expr"]}
+                    )
+                    assert query.status_code == 200 and query.json()["status"] == "success"
+            print("All RAG dashboard PromQL expressions accepted by Prometheus: passed")
+            print("Authenticated provisioned RAG Performance dashboard: passed")
     finally:
         async with factory() as session:
             originals = (

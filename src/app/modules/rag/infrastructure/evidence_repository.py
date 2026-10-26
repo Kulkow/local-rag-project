@@ -1,9 +1,10 @@
 """Short PostgreSQL reads with repeated live user/family/document/index authorization."""
 
+import re
 from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import TSQUERY, TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.documents.infrastructure.chunk_repository import chunks_table, indexes
@@ -109,14 +110,35 @@ class SqlEvidenceRepository:
     ) -> list[RetrievedChunk]:
         search_vector = sa.literal_column("document_chunks.search_vector", type_=TSVECTOR())
         query = sa.func.plainto_tsquery("simple", question)
-        score = sa.func.ts_rank_cd(search_vector, query).label("score")
+        russian_vector = sa.literal_column("document_chunks.search_vector_ru", type_=TSVECTOR())
+        russian_query: sa.ColumnElement[str] = sa.func.plainto_tsquery("russian", question)
+        # Snowball over-stems singular "лейкоцит" to "лейкоц", while the plural
+        # becomes "лейкоцит". A bounded single-word prefix bridges these stems.
+        # Build syntax from PostgreSQL's escaped tsquery, never raw user input.
+        if re.fullmatch(r"[А-Яа-яЁё]{4,}", question.strip()):
+            russian_query = sa.case(
+                (
+                    sa.func.numnode(russian_query) > 0,
+                    sa.cast(sa.cast(russian_query, sa.Text).concat(":*"), TSQUERY()),
+                ),
+                else_=russian_query,
+            )
+        score = sa.func.greatest(
+            sa.func.ts_rank_cd(search_vector, query),
+            sa.func.ts_rank_cd(russian_vector, russian_query),
+        ).label("score")
         async with self.factory() as session:
             await session.execute(sa.text("SET statement_timeout = '5000ms'"))
             rows = (
                 await session.execute(
                     self.selection(actor, family_id)
                     .add_columns(score)
-                    .where(search_vector.op("@@")(query))
+                    .where(
+                        sa.or_(
+                            search_vector.op("@@")(query),
+                            russian_vector.op("@@")(russian_query),
+                        )
+                    )
                     .order_by(score.desc(), chunks_table.c.id)
                     .limit(top_k)
                 )

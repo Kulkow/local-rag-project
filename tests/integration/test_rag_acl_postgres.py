@@ -65,7 +65,11 @@ async def test_rag_acl_filtering_citations_and_stale_vectors() -> None:
                 )
                 await SqlIdentityRepository(session).save_user(User(actor, "unused-fixture"))
             for i, text in enumerate(
-                ["PRIVATEALPHASECRET", "ORION retention period is 37 days.", "FAMILYBETASECRET"]
+                [
+                    "PRIVATEALPHASECRET лейкоциты",
+                    "ORION retention period is 37 days. Лейкоциты в норме.",
+                    "FAMILYBETASECRET лейкоциты",
+                ]
             ):
                 document_id = document_ids[i]
                 await session.execute(
@@ -131,6 +135,21 @@ async def test_rag_acl_filtering_citations_and_stale_vectors() -> None:
             assert result.json()["citations"][0]["document_id"] == str(document_ids[1])
             assert result.json()["trace_id"] == result.headers["X-Request-ID"]
             assert "PRIVATEALPHA" not in result.text and "FAMILYBETA" not in result.text
+            # Russian inflections match the same authorized evidence, including existing chunks.
+            for term in ("лейкоцит", "лейкоциты", "лейкоцитов", "ЛЕЙКОЦИТ"):
+                response = await client.post(
+                    "/rag/search", headers=tokens[1], json={**body, "question": term}
+                )
+                assert response.status_code == 200, response.text
+                found = response.json()["retrieved_chunks"]
+                assert {item["document_id"] for item in found} == {str(document_ids[1])}
+                assert "PRIVATEALPHA" not in response.text and "FAMILYBETA" not in response.text
+            for term in ("эритроцит", "который", "лейкоцит | эритроцит"):
+                response = await client.post(
+                    "/rag/search", headers=tokens[1], json={**body, "question": term}
+                )
+                assert response.status_code == 200, response.text
+                assert not response.json()["retrieved_chunks"]
             # A poisoned/stale vector response cannot bypass live SQL authorization.
             scopes = await use_case.repository.scopes(actors[0], family_a)
             visible = await use_case.repository.scopes(actors[1], family_a)
@@ -153,6 +172,15 @@ async def test_rag_acl_filtering_citations_and_stale_vectors() -> None:
                 document_ids[1]
             ]
             assert "PRIVATEALPHA" not in result.text and "FAMILYBETA" not in result.text
+            hybrid = await client.post(
+                "/rag/ask", headers=tokens[1], json={**body, "retrieval_mode": "hybrid"}
+            )
+            assert hybrid.status_code == 200, hybrid.text
+            assert [item["document_id"] for item in hybrid.json()["retrieved_chunks"]] == [
+                str(document_ids[1])
+            ]
+            assert "PRIVATEALPHA" not in hybrid.text and "FAMILYBETA" not in hybrid.text
+            assert "rrf_ms" in hybrid.json()["timings"]
             chat.reset_mock()
             vectors.search.return_value = [
                 Candidate(chunks[1][0].id, document_ids[1], uuid4(), 0.99)

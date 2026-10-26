@@ -51,6 +51,16 @@ class ExtractedContent:
             raise ExtractionFailure("no_text")
 
     @property
+    def title(self) -> str | None:
+        """Deterministic first meaningful line of the transcript, not PDF metadata."""
+        for page in self.pages:
+            for line in page.text.splitlines():
+                title = " ".join(line.split())
+                if any(character.isalpha() for character in title):
+                    return title[:255].rstrip()
+        return None
+
+    @property
     def character_count(self) -> int:
         return sum(len(page.text) for page in self.pages)
 

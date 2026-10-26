@@ -37,6 +37,7 @@ class DocumentView(BaseModel):
     family_id: UUID
     owner_id: UUID
     filename: str
+    title: str | None = None
     content_type: str
     size_bytes: int
     checksum: str

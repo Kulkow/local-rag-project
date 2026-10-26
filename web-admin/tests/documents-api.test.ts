@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { uploadDocument, downloadDocument, previewPdf } from '../src/documents-api';
+import { uploadDocument, downloadDocument, previewPdf } from '../src/modules/documents/infrastructure/api';
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it('sends the original File as bounded binary transport with an idempotency key', async () => {
  const file = new File(['%PDF-1.4\n%%EOF'], 'пример & guide.pdf', { type: 'application/pdf' });

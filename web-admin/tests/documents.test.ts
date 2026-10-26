@@ -3,12 +3,12 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import PrimeVue from 'primevue/config';
 import { mount, flushPromises } from '@vue/test-utils';
-import Documents from '../src/views/Documents.vue';
-import { useAuth } from '../src/stores/auth';
-import * as api from '../src/documents-api';
-import { listFamilies } from '../src/management-api';
-vi.mock('../src/documents-api', () => ({ listDocuments: vi.fn(), uploadDocument: vi.fn(), extractionFormats: vi.fn(), enqueueDocument: vi.fn(), processingStatus: vi.fn(), indexStatus: vi.fn(), reindexDocument: vi.fn(), readPages: vi.fn() }));
-vi.mock('../src/management-api', () => ({ listFamilies: vi.fn(), login: vi.fn(), request: vi.fn(), ApiError: class extends Error {} }));
+import Documents from '../src/modules/documents/presentation/DocumentsView.vue';
+import { useAuth } from '../src/modules/identity/presentation/auth-store';
+import * as api from '../src/modules/documents/infrastructure/api';
+import { listFamilies } from '../src/modules/families/infrastructure/api';
+vi.mock('../src/modules/documents/infrastructure/api', () => ({ previewPdf: vi.fn(), listDocuments: vi.fn(), uploadDocument: vi.fn(), extractionFormats: vi.fn(), enqueueDocument: vi.fn(), processingStatus: vi.fn(), indexStatus: vi.fn(), reindexDocument: vi.fn(), readPages: vi.fn() }));
+vi.mock('../src/modules/families/infrastructure/api', () => ({ listFamilies: vi.fn(), login: vi.fn(), request: vi.fn(), ApiError: class extends Error {} }));
 let pinia: ReturnType<typeof createPinia>;
 let wrapper: ReturnType<typeof mount> | undefined;
 beforeEach(() => {
@@ -233,4 +233,84 @@ it('stops uploading the remaining files when the session changes', async () => {
  useAuth().token = ''; useAuth().user = null; await flushPromises(); release(); await flushPromises();
  expect(api.uploadDocument).toHaveBeenCalledTimes(1); expect(api.enqueueDocument).not.toHaveBeenCalled();
  expect(view.text()).not.toContain('Сохранено:');
+});
+it('shows a transcript title as text while preserving the original filename', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ id: 'doc', title: '<script>Заголовок</script>', filename: 'original.pdf', family_id: 'family-id', owner_id: 'owner', status: 'uploaded', visibility: 'private', size_bytes: 10, checksum: 'hash', content_type: 'application/pdf', error_code: null, created_at: null }]);
+ const view = mountPage(); await flushPromises();
+ expect(view.find('.document-record strong').text()).toBe('<script>Заголовок</script>');
+ expect(view.find('.document-record').text()).toContain('original.pdf');
+ expect(view.find('script').exists()).toBe(false);
+});
+
+it('opens an uploaded PDF original for a member even when extraction is unavailable', async () => {
+ vi.mocked(api.extractionFormats).mockResolvedValue([]);
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);
+ const view = mountPage('member'); await flushPromises();
+ await view.find('button[aria-label="Открыть оригинал guide.pdf"]').trigger('click'); await flushPromises();
+ expect(api.previewPdf).toHaveBeenCalledWith('jwt', 'doc');
+ vi.mocked(api.previewPdf).mockRejectedValue(new Error('Document not found'));
+ await view.find('button[aria-label="Открыть оригинал guide.pdf"]').trigger('click'); await flushPromises();
+ expect(view.find('[role="alert"]').text()).toContain('Document not found');
+});
+it('does not offer PDF preview for unfinished uploads or other formats', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([
+  { ...uploadedFile(new File(['pdf'], 'pending.pdf', { type: 'application/pdf' })), status: 'uploading' },
+  { ...uploadedFile(new File(['html'], 'guide.html', { type: 'text/html' })) },
+  { ...uploadedFile(new File(['pdf'], 'failed.pdf', { type: 'application/pdf' })), status: 'upload_failed' },
+ ]);
+ const view = mountPage(); await flushPromises();
+ expect(view.findAll('button').some(button => button.text().includes('Открыть оригинал'))).toBe(false);
+ expect(api.previewPdf).not.toHaveBeenCalled();
+});
+it('keeps technical metadata collapsed while showing the title, access and primary actions', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc', title: 'Регламент работы' }]);
+ const view = mountPage('member'); await flushPromises();
+ expect(view.find('.document-identity strong').text()).toBe('Регламент работы');
+ expect(view.find('.document-meta').text()).toContain('Личный');
+ const details = view.find('.document-details'); expect(details.attributes('open')).toBeUndefined();
+ expect(details.text()).toContain('SHA-256'); expect(details.text()).toContain('Переиндексировать');
+ expect(view.find('.document-actions').text()).toContain('Открыть оригинал');
+ expect(view.find('.document-actions').text()).not.toContain('Переиндексировать');
+});
+it('shows search readiness only when an actual index is available', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);
+ vi.mocked(api.processingStatus).mockResolvedValue({ document_id: 'doc', status: 'succeeded', attempts: 1, error_code: null, created_at: null, started_at: null, finished_at: null });
+ const view = mountPage(); await flushPromises();
+ expect(view.find('.document-state').text()).toBe('Обработан');
+ vi.mocked(api.indexStatus).mockResolvedValue({ document_id: 'doc', status: 'indexed', embedding_model: 'local', embedding_digest: 'digest', dimensions: 768, chunk_count: 3, error_code: null });
+ await view.findAll('button').find(button => button.text() === 'Обновить')!.trigger('click'); await flushPromises();
+ expect(view.find('.document-state').text()).toBe('Доступен для поиска');
+});
+it('opens extracted text in a modal, paginates, and reports errors inside it', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);
+ vi.mocked(api.readPages).mockResolvedValue({ total_pages: 6, pages: [{ page_number: 1, text: 'First page' }] });
+ const view = mountPage(); await flushPromises();
+ await view.findAll('button').find(button => button.text() === 'Просмотреть текст')!.trigger('click'); await flushPromises();
+ expect(view.find('[role="dialog"]').exists()).toBe(true);
+ const dialog = view.find('[role="dialog"]').element as HTMLElement;
+ expect(dialog.style.background).toBe('rgb(255, 255, 255)');
+ expect(dialog.style.color).toBe('rgb(23, 43, 65)');
+ expect(dialog.style.colorScheme).toBe('light');
+ expect(view.find('[role="dialog"] pre').text()).toBe('First page');
+ vi.mocked(api.readPages).mockRejectedValueOnce(new Error('Text unavailable'));
+ await view.findAll('button').find(button => button.text() === 'Следующие страницы')!.trigger('click'); await flushPromises();
+ expect(api.readPages).toHaveBeenLastCalledWith('jwt', 'doc', 5);
+ expect(view.find('[role="dialog"] [role="alert"]').text()).toContain('Text unavailable');
+ vi.mocked(api.readPages).mockResolvedValue({ total_pages: 6, pages: [{ page_number: 6, text: 'Last page' }] });
+ await view.findAll('button').find(button => button.text() === 'Повторить')!.trigger('click'); await flushPromises();
+ expect(view.find('[role="dialog"] pre').text()).toBe('Last page');
+ await view.findAll('button').find(button => button.text() === 'Закрыть')!.trigger('click'); await flushPromises();
+ expect(view.find('pre').exists()).toBe(false);
+});
+it('ignores a text response after the popup has been closed', async () => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);
+ let release!: (value: api.ExtractedPages) => void;
+ vi.mocked(api.readPages).mockImplementation(() => new Promise(resolve => { release = resolve; }));
+ const view = mountPage(); await flushPromises();
+ await view.findAll('button').find(button => button.text() === 'Просмотреть текст')!.trigger('click'); await flushPromises();
+ expect(view.find('[role="dialog"]').text()).toContain('Загружаем текст');
+ await view.findAll('button').find(button => button.text() === 'Закрыть')!.trigger('click'); await flushPromises();
+ release({ total_pages: 1, pages: [{ page_number: 1, text: 'Late response' }] }); await flushPromises();
+ expect(view.find('pre').exists()).toBe(false);
+ expect(view.text()).not.toContain('Late response');
 });

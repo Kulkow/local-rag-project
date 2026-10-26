@@ -46,7 +46,12 @@ class RepositoryFake:
         return self.run, True
 
     async def complete(
-        self, run: Extraction, page_count: int, character_count: int, artifact_key: str
+        self,
+        run: Extraction,
+        page_count: int,
+        character_count: int,
+        artifact_key: str,
+        title: str | None = None,
     ) -> Extraction:
         self.run = replace(
             run,
@@ -55,7 +60,11 @@ class RepositoryFake:
             character_count=character_count,
             artifact_key=artifact_key,
         )
+        self.document = replace(self.document, title=title)
         return self.run
+
+    async def set_title(self, run: Extraction, title: str | None) -> None:
+        self.document = replace(self.document, title=title)
 
     async def fail(self, run: Extraction, code: str) -> None:
         self.run = replace(run, status=ExtractionStatus.FAILED, error_code=code)

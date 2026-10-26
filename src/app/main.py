@@ -23,6 +23,7 @@ from app.modules.rag.api.routes import router as rag_router
 from app.modules.documents.application.extraction import ExtractorRegistry
 from app.modules.documents.infrastructure.pdf_extractor import PdfExtractor
 from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
+from app.observability.rag_metrics import PrometheusRagObserver
 from app.core.settings import Settings
 from app.infrastructure.db.connection import create_engine
 from app.modules.operations.api.routes import router
@@ -73,6 +74,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.engine.dispose()
 
     app = FastAPI(title="Enterprise RAG Platform", version="0.1.0", lifespan=lifespan)
+    app.state.rag_metrics = PrometheusRagObserver()
+
+    @app.get("/internal/metrics", include_in_schema=False)
+    async def rag_metrics() -> Response:
+        return Response(app.state.rag_metrics.render(), media_type="text/plain; version=0.0.4")
+
     app.include_router(router)
     app.include_router(identity_router)
     app.include_router(families_router)

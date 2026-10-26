@@ -17,5 +17,7 @@ jobs:
       - run: make lock
       - run: docker compose up -d postgres
       - run: make check
+      - name: Audit Web Admin dependencies
+        run: docker compose --profile tools run --rm --no-deps web-checks npm run audit
       - if: always()
         run: docker compose down

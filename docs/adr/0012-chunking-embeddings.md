@@ -29,7 +29,7 @@ Chunk UUIDv5 зависит от документа, checksum, версии ал
 checksum, extraction generation, chunker/config, имя и digest модели, размерность,
 collection, fingerprint, статус и число чанков. Вторая хранит текст и координаты
 чанков; generated tsvector ('simple') и GIN подготавливают keyword retrieval,
-но поискового API и hybrid retrieval ещё нет.
+поисковый API добавлен позднее (ADR 0013), hybrid/RRF/reranker — в ADR 0023.
 
 Digest модели читается из /api/tags до и после индексации. Изменение тега во время
 операции даёт conflict и не публикует ready state. Не меняйте локальную модель

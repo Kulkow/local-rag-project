@@ -17,6 +17,7 @@ documents = sa.Table(
     sa.Column("family_id", sa.Uuid()),
     sa.Column("owner_id", sa.Uuid()),
     sa.Column("filename", sa.String(255)),
+    sa.Column("title", sa.String(255)),
     sa.Column("content_type", sa.String(100)),
     sa.Column("size_bytes", sa.Integer()),
     sa.Column("checksum", sa.String(64)),
@@ -42,6 +43,7 @@ def to_document(row: sa.RowMapping) -> Document:
         DocumentStatus(row["status"]),
         row["error_code"],
         row["created_at"],
+        row["title"],
     )
 
 

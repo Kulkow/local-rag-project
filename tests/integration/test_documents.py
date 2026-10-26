@@ -557,8 +557,19 @@ async def test_live_upload_api_persists_the_original_in_minio() -> None:
                     result = extracted.json()
                     artifact_key = f"extracted/{document_id}/{result['generation']}.json"
                     assert result["page_count"] == 2 and result["status"] == "extracted"
+                    listing = await client.get(f"/documents?family_id={family_id}", headers=auth)
+                    assert listing.json()[0]["title"] == "Synthetic evidence"
+                    # Existing extractions backfill metadata without re-extracting the PDF.
+                    async with app.state.db_session_factory() as session, session.begin():
+                        await session.execute(
+                            sa.update(documents)
+                            .where(documents.c.id == document_id)
+                            .values(title=None)
+                        )
                     replay = await client.post(f"/documents/{document_id}/extract", headers=auth)
                     assert replay.json()["generation"] == result["generation"]
+                    listing = await client.get(f"/documents?family_id={family_id}", headers=auth)
+                    assert listing.json()[0]["title"] == "Synthetic evidence"
                     pages = await client.get(f"/documents/{document_id}/pages", headers=auth)
                     assert pages.status_code == 200, pages.text
                     assert pages.json()["pages"] == [

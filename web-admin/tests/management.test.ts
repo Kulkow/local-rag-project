@@ -3,16 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import PrimeVue from 'primevue/config';
 import { flushPromises, mount } from '@vue/test-utils';
-import Families from '../src/views/Families.vue';
-import SessionAccess from '../src/components/SessionAccess.vue';
-import Users from '../src/views/Users.vue';
-import { useAuth } from '../src/stores/auth';
-import * as api from '../src/management-api';
-vi.mock('../src/management-api', () => ({
- ApiError: class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }, login: vi.fn(), request: vi.fn(), listFamilies: vi.fn(), listMembers: vi.fn(), createFamily: vi.fn(),
- renameFamily: vi.fn(), deleteFamily: vi.fn(), addMember: vi.fn(), changeMember: vi.fn(), removeMember: vi.fn(),
- listUsers: vi.fn(), createUser: vi.fn(), updateUser: vi.fn(),
-}));
+import Families from '../src/modules/families/presentation/FamiliesView.vue';
+import SessionAccess from '../src/modules/identity/presentation/SessionAccess.vue';
+import Users from '../src/modules/identity/presentation/UsersView.vue';
+import { useAuth } from '../src/modules/identity/presentation/auth-store';
+import * as familyApi from '../src/modules/families/infrastructure/api';
+import * as identityApi from '../src/modules/identity/infrastructure/api';
+import * as http from '../src/shared/infrastructure/http';
+const api = { ...familyApi, ...identityApi, ...http };
+vi.mock('../src/shared/infrastructure/http', () => ({ ApiError: class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }, request: vi.fn() }));
+vi.mock('../src/modules/identity/infrastructure/api', async importOriginal => ({ ...await importOriginal<typeof import('../src/modules/identity/infrastructure/api')>(), login: vi.fn(), listUsers: vi.fn(), createUser: vi.fn(), updateUser: vi.fn() }));
+vi.mock('../src/modules/families/infrastructure/api', () => ({ listFamilies: vi.fn(), listMembers: vi.fn(), createFamily: vi.fn(), renameFamily: vi.fn(), deleteFamily: vi.fn(), addMember: vi.fn(), changeMember: vi.fn(), removeMember: vi.fn() }));
 let pinia: ReturnType<typeof createPinia>;
 let wrapper: ReturnType<typeof mount> | undefined;
 beforeEach(() => {
@@ -20,7 +21,7 @@ beforeEach(() => {
  vi.mocked(api.listFamilies).mockResolvedValue([]); vi.mocked(api.listMembers).mockResolvedValue([]); vi.mocked(api.listUsers).mockResolvedValue([]);
 });
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; });
-function signIn(role: api.User['role'] = 'admin') {
+function signIn(role: identityApi.User['role'] = 'admin') {
  const auth = useAuth(); auth.token = 'test-token'; auth.user = { id: 'user-id', username: 'synthetic-admin', role, family_member_id: null, is_active: true };
 }
 const global = () => ({ plugins: [pinia, PrimeVue], stubs: { Dialog: true } });

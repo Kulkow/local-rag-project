@@ -47,6 +47,7 @@ class Document:
     status: DocumentStatus = DocumentStatus.UPLOADING
     error_code: str | None = None
     created_at: datetime | None = None
+    title: str | None = None
 
     def complete_upload(self) -> "Document":
         self._require_uploading()

@@ -5,12 +5,13 @@
 Подключаем нестриминговый RAG поверх существующего ingestion. POST /rag/search
 возвращает найденные выдержки без chat-вызова; POST /rag/ask добавляет локальный
 Ollama qwen3:4b. Режимы keyword и vector — отдельные baseline algorithms.
-Hybrid/RRF, reranking, LangGraph, SSE и evaluation management не входят в этот срез.
+Hybrid/RRF и reranking добавлены позднее в ADR 0023. LangGraph, SSE и evaluation
+management пока не реализованы.
 Новых компонентов инфраструктуры, зависимостей и миграций нет.
 
-Keyword использует PostgreSQL generated search_vector ('simple'), plainto_tsquery
-и ts_rank_cd. Это AND-поиск по словам без языковой морфологии: полный естественный
-вопрос может совпадать хуже короткой фразы. Vector использует ту же embedding-модель
+Keyword использует PostgreSQL generated search_vector ('simple') и search_vector_ru
+('russian'), plainto_tsquery и ts_rank_cd. Это AND-поиск по словам с русским
+стеммингом: полный естественный вопрос может совпадать хуже короткой фразы. Vector использует ту же embedding-модель
 и digest/размерность, что ingestion. При несовместимом индексе нужен reindex;
 не выполняем сравнение разных embedding spaces.
 
@@ -56,7 +57,7 @@ abstained с фиксированным сообщением. Нет evidence �
 Prompt-policy снижает injection risk, но не доказывает устойчивость произвольной модели.
 
 Vector threshold RAG_MIN_VECTOR_SCORE=0.35 — исходный operating default, не
-калиброванный quality gate. Keyword rank и cosine несопоставимы; hybrid пока нет.
+калиброванный quality gate. Keyword rank и cosine несопоставимы; hybrid объединяет позиции через RRF (ADR 0023).
 Отсутствие evidence/ответа не доказывает отсутствие фактов во всей базе.
 
 ## API и эксплуатация
@@ -122,3 +123,27 @@ rewrite/break убирает /api и сохраняет query string. Семан
   после этого полный pytest и smoke повторно прошли.
 - Визуальный браузерный QA не выполнялся; component tests и реальные HTTP proxy
   проверки не заменяют визуальную приёмку. Production outcomes не заявляются.
+
+## Qdrant Query API
+
+Векторный адаптер использует POST /collections/{collection}/points/query:
+вектор передаётся в query, кандидаты читаются из result.points. API поддерживается
+закреплённой Qdrant 1.12.5; фильтры доступа, score_threshold и top_k сохраняются.
+[Контракт Qdrant 1.12.x](https://api.qdrant.tech/v-1-12-x/api-reference/search/query-points).
+
+## Русские словоформы в keyword-поиске
+
+Миграция 0012 добавляет generated search_vector_ru с PostgreSQL russian и GIN.
+Существующие фрагменты обрабатываются при миграции, повторные загрузка и embeddings
+не нужны. Запрос сопоставляется с simple либо russian; score — максимум двух
+рангов, без дублирования фрагментов. Фильтры доступа одинаковы для обоих условий.
+«лейкоцит», «лейкоциты», «лейкоцитов» находят один фрагмент. Это stemming,
+не исправление опечаток и не поиск подстрок. Векторный режим не меняется.
+Добавление stored-колонки пересчитывает строки и требует блокировки таблицы;
+для большой базы миграцию следует планировать отдельно.
+
+У Snowball формы «лейкоцит» и «лейкоциты» имеют разные основы («лейкоц»
+и «лейкоцит»). Для одиночного кириллического слова от четырёх букв используется
+префикс нормализованной основы; синтаксис строится из escaped tsquery PostgreSQL,
+не из пользовательского текста. Это расширяет совпадения и может снизить точность
+на словах с общим корнем; многословные запросы сохраняют AND-семантику.

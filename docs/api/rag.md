@@ -18,8 +18,8 @@ JWT обязателен для обоих endpoint. Формат тела:
 ```
 
 family_id — реальная доступная семья; question — 1..2000 символов, не whitespace;
-retrieval_mode — vector (default) или keyword; top_k — 1..8 (default 5).
-Keyword ищет слова ('simple', AND): используйте короткие термины, если полный
+retrieval_mode — vector (API default), keyword или hybrid; top_k — 1..8 (default 5).
+Keyword использует PostgreSQL FTS ('simple' + 'russian', AND): используйте короткие термины, если полный
 естественный вопрос не совпадает. Vector требует установленную embedding-модель
 и индекс с тем же digest/размерностью. Chat используется только в /ask при evidence.
 
@@ -51,5 +51,46 @@ Score vector — cosine similarity, score keyword — ts_rank_cd. Их нель�
 сырой provider response. При отказе не вызывайте модель с широким неавторизованным
 контекстом: смените режим, уточните вопрос или проверьте индексацию.
 
-Модель может ошибаться даже при корректных номерах ссылок. Это baseline без reranking,
-hybrid и измеренной faithfulness. Подробности: [ADR 0013](../adr/0013-rag-search-answering.md).
+Модель может ошибаться даже при корректных номерах ссылок. Hybrid/RRF и локальный
+LLM-reranker реализованы; faithfulness пока не измерена. Подробности: [ADR 0013](../adr/0013-rag-search-answering.md).
+
+Ответ timings дополнен длительностями выполненных этапов *_ms: scope,
+embedding_identity, query_embedding, keyword_search, vector_search, candidate_read,
+context, acl_revalidation, citation_validation. retrieval_ms/generation_ms/total_ms
+сохранены; пропущенные этапы отсутствуют. Повторные этапы суммируются. Эти же вызовы
+попадают в histogram Prometheus; Grafana: `/d/rag-performance` на localhost:3001.
+Подробнее: [ADR 0021](../adr/0021-rag-stage-prometheus-metrics.md).
+
+При отказе от генерации `answer` содержит конкретное объяснение и следующий шаг,
+а `reason` сохраняет машинный код. `no_evidence` различает в тексте отсутствие
+доступных готовых индексов и отсутствие подходящих результатов поиска.
+`invalid_model_output` перечисляет нарушенные требования к answer/citations/
+insufficient_evidence без вывода сырого ответа модели. В Web Admin код причины
+показывается под объяснением. Недоступные документы, внутренние исключения и
+содержимое отклонённого ответа в диагностику не включаются.
+
+Keyword-поиск учитывает русские словоформы через PostgreSQL russian stemming
+(например, «лейкоцит» и «лейкоциты»), сохраняя literal simple-поиск.
+Требуется миграция 0012; существующие фрагменты обновляются автоматически.
+
+Для одного русского слова от четырёх букв дополнительно допускается префикс
+нормализованной основы: это компенсирует различия стемминга единственного
+и множественного числа, но может вернуть дополнительные слова с общим корнем.
+
+Query Rewriting: при `RAG_QUERY_REWRITING=true` (по умолчанию) `/rag/ask`
+после пустого поиска выполняет одну переформулировку и повторяет поиск в том же
+режиме с повторной проверкой доступа. Генерация отвечает на исходный вопрос.
+`/rag/search` остаётся без LLM. Лимит rewrite — 10 секунд, общий запрос — 80 секунд.
+При ошибке rewrite сохраняется безопасный отказ. Выполненные этапы отражаются в
+`timings.query_rewriting_ms`, `timings.query_retry_ms` и Prometheus stage histogram.
+
+## Advanced RAG
+
+`retrieval_mode=hybrid`: PostgreSQL FTS + Qdrant → RRF (k=60) → optional local
+LLM reranker → top_k → context → answer/citations. ACL фильтрует обе ветки
+до попадания evidence в модель. Playground выбирает hybrid по умолчанию.
+В hybrid поле score — RRF, а не cosine. `reranked=true` означает успешное
+переранжирование; scores сохраняются от RRF. При невалидном ответе/таймауте
+reranker сохраняется RRF. `RAG_RERANKING=false` отключает reranker. `/rag/search`
+не вызывает rewriter/reranker/chat; `/rag/ask` использует их по необходимости.
+Новые timings: `rrf_ms`, `reranking_ms`. Подробнее: [ADR 0023](../adr/0023-advanced-rag.md).

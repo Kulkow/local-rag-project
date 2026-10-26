@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     )
     documents_bucket: str = "rag-documents"
 
+    rag_reranking: bool = True
+    rag_query_rewriting: bool = True
     rag_min_vector_score: float = Field(default=0.35, ge=-1, le=1)
     embedding_dimensions: int = Field(default=768, ge=1, le=8192)
     chunk_size: int = Field(default=1000, ge=1, le=8000)

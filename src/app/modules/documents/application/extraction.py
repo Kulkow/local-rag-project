@@ -50,8 +50,14 @@ class ExtractionRepository(Protocol):
     async def get_visible(self, actor: Principal, document_id: UUID) -> Document: ...
     async def claim(self, document: Document) -> tuple[Extraction, bool]: ...
     async def complete(
-        self, run: Extraction, page_count: int, character_count: int, artifact_key: str
+        self,
+        run: Extraction,
+        page_count: int,
+        character_count: int,
+        artifact_key: str,
+        title: str | None = None,
     ) -> Extraction: ...
+    async def set_title(self, run: Extraction, title: str | None) -> None: ...
     async def fail(self, run: Extraction, code: str) -> None: ...
     async def get(self, document_id: UUID) -> Extraction | None: ...
 
@@ -83,6 +89,10 @@ class ExtractDocument:
         extractor = self.registry.for_mime(document.content_type)
         run, claimed = await self.repository.claim(document)
         if not claimed:
+            if document.title is None:
+                await ReadExtractedPages(self.repository, self.storage, self.access).execute(
+                    actor, document_id, 0, 1
+                )
             return run
         key = f"extracted/{document.id}/{run.generation}.json"
         try:
@@ -107,7 +117,7 @@ class ExtractDocument:
                     raise ExtractionFailure("text_limit")
                 await self.storage.put(key, artifact, "application/json")
                 return await self.repository.complete(
-                    run, len(content.pages), content.character_count, key
+                    run, len(content.pages), content.character_count, key, content.title
                 )
         except (Exception, asyncio.CancelledError) as error:
             code = error.code if isinstance(error, ExtractionFailure) else "extraction_unavailable"
@@ -165,4 +175,6 @@ class ReadExtractedPages:
                 raise ValueError("Artifact metadata mismatch")
         except Exception:
             raise ApplicationError("storage_unavailable", "Extracted text is unavailable") from None
+        if document.title is None:
+            await self.repository.set_title(run, content.title)
         return run, content.pages[offset : offset + limit]

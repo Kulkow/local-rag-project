@@ -20,6 +20,7 @@ def test_inner_layers_do_not_import_frameworks_or_adapters() -> None:
         "boto3",
         "botocore",
         "pypdf",
+        "prometheus_client",
     }
     for path in (ROOT / "modules").rglob("*.py"):
         if not {"domain", "application"}.intersection(path.relative_to(ROOT).parts):
@@ -34,7 +35,9 @@ def test_inner_layers_do_not_import_frameworks_or_adapters() -> None:
             for module in imports:
                 parts = module.split(".")
                 assert parts[0] not in forbidden, (path, module)
-                assert not {"infrastructure", "api", "core", "main"}.intersection(parts), (
+                assert not {"infrastructure", "api", "core", "main", "observability"}.intersection(
+                    parts
+                ), (
                     path,
                     module,
                 )

@@ -127,7 +127,12 @@ class SqlExtractionRepository:
             return to_extraction(updated), True
 
     async def complete(
-        self, run: Extraction, page_count: int, character_count: int, artifact_key: str
+        self,
+        run: Extraction,
+        page_count: int,
+        character_count: int,
+        artifact_key: str,
+        title: str | None = None,
     ) -> Extraction:
         completed = run.complete(page_count, character_count, artifact_key)
         async with self.factory() as session, session.begin():
@@ -156,8 +161,30 @@ class SqlExtractionRepository:
             )
             if row is None:
                 raise ApplicationError("conflict", "This extraction attempt has been superseded")
+            await session.execute(
+                sa.update(documents).where(documents.c.id == run.document_id).values(title=title)
+            )
             result = to_extraction(row)
         return result
+
+    async def set_title(self, run: Extraction, title: str | None) -> None:
+        async with self.factory() as session, session.begin():
+            current = await session.scalar(
+                sa.select(extractions.c.document_id)
+                .where(
+                    extractions.c.document_id == run.document_id,
+                    extractions.c.generation == run.generation,
+                    extractions.c.status == "extracted",
+                )
+                .with_for_update()
+            )
+            if current is None:
+                raise ApplicationError("conflict", "This extraction attempt has been superseded")
+            await session.execute(
+                sa.update(documents)
+                .where(documents.c.id == run.document_id, documents.c.title.is_(None))
+                .values(title=title)
+            )
 
     async def fail(self, run: Extraction, code: str) -> None:
         failed = run.fail(code)

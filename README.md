@@ -4,7 +4,8 @@ Docker-first reference project, Phase 1: FastAPI, async PostgreSQL, Alembic,
 Celery/Redis, Qdrant, MinIO, host-installed Ollama and Vue 3/Vite/PrimeVue 4/Pinia administration.
 Database-backed users, family administration and service monitoring are implemented.
 Document upload and queued PDF extraction/chunking/embedding indexing are implemented.
-Authorized keyword/vector retrieval and cited local answers are implemented.
+Advanced RAG is implemented: PostgreSQL FTS + vector hybrid retrieval, RRF,
+optional local LLM reranking, ACL-filtered evidence and cited local answers.
 Agent workflows and quality evaluation remain future phases.
 
 ## Start
@@ -74,7 +75,7 @@ Regenerate frontend schemas after API changes:
 
 ```sh
 docker compose --profile tools run --rm -v "$PWD/web-admin:/app/web-admin" checks uv run --frozen python scripts/export_openapi.py
-docker compose --profile tools run --rm -v "$PWD/web-admin:/contract" web-checks npx openapi-typescript /contract/openapi.json -o /contract/src/schema.ts
+docker compose --profile tools run --rm -v "$PWD/web-admin:/contract" web-checks npx openapi-typescript /contract/openapi.json -o /contract/src/shared/infrastructure/schema.ts
 ```
 
 ## Models
@@ -407,7 +408,7 @@ CPU/RAM зависят от локальной модели; текущий ор
 
 ## Поиск и генерация ответов
 
-Откройте **http://localhost:3000/rag**: выберите семью, вопрос и режим keyword/vector.
+Откройте **http://localhost:3000/rag**: выберите семью, вопрос и режим keyword/vector/hybrid.
 «Только поиск» показывает разрешённые фрагменты без chat-вызова; «Получить ответ»
 добавляет локальную генерацию с проверяемыми цитатами, scores, timings и trace ID.
 Вход member разрешает RAG-чтение своих доступных документов; сервер проверяет ACL.
@@ -422,7 +423,7 @@ docker compose up -d --build api web-admin
 
 Новых миграций/зависимостей для RAG-чтения нет. Новые API — POST /rag/ask и
 POST /rag/search. В .env RAG_MIN_VECTOR_SCORE=0.35 задаёт исходный cosine threshold,
-который ещё не калиброван на golden dataset. Keyword — отдельный baseline, не hybrid.
+который ещё не калиброван на golden dataset. Keyword/vector — отдельные baselines; hybrid объединяет их через RRF.
 При неиндексированном/несовместимом документе выполните reindex в Documents.
 
 Модель получает только разрешённые выдержки; неподтверждённый или некорректно
@@ -431,8 +432,8 @@ POST /rag/search. В .env RAG_MIN_VECTOR_SCORE=0.35 задаёт исходны�
 Запросы и документы не записываются в telemetry. Streaming и LangGraph — следующие
 срезы после базовой оценки.
 
-[API и примеры](docs/api/rag.md), [архитектура и ограничения](docs/adr/0013-rag-search-answering.md).
-Расширенный scripts/smoke_processing_queue.py теперь также проверяет оба retrieval
+[API и примеры](docs/api/rag.md), [Advanced RAG: архитектура и ограничения](docs/architecture/advanced-rag.md).
+Расширенный scripts/smoke_processing_queue.py теперь также проверяет три retrieval
 режима, реальный локальный chat, цитаты и deterministic no-evidence abstention;
 нужны API, Web Admin, worker, Ollama, Qdrant и monitoring. Обычные pytest работают с fake LLM.
 
@@ -456,3 +457,57 @@ Web Admin поддерживает множественный выбор и па
 раскрываются по нажатию. Оригинал можно скачать из карточки источника; API повторно
 проверяет JWT, семейный доступ и видимость документа.
 [Решение и проверки](docs/adr/0017-rag-results-download.md).
+
+Метаданные документов включают `title` из первой содержательной строки расшифровки.
+После обновления примените миграцию 0011 (`make migrate`). Старые записи заполнят
+заголовок при просмотре текста или переиндексации; до этого UI использует имя файла.
+[Правила извлечения](docs/adr/0018-transcript-document-title.md).
+
+## Web Admin: доменные модули и lint
+
+Frontend разделён на `modules/documents`, `identity`, `families`, `rag`, `operations`.
+Правила документов — в domain, пакетная загрузка с портами — в application,
+HTTP/browser adapters — в infrastructure, Vue/Pinia — в presentation.
+ESLint проверяет TypeScript/Vue и границы импортов. Подробнее:
+[ADR 0019](docs/adr/0019-web-admin-ddd-lint.md).
+
+`npm run build` обязательно выполняет lint через `prebuild`, затем `vue-tsc` и Vite;
+это действует в Docker и CI. Отдельные проверки без host Node:
+
+```sh
+docker compose --profile tools run --build --rm --no-deps web-checks npm run lint
+docker compose --profile tools run --rm --no-deps web-checks npm test
+```
+
+Для локального редактирования есть `npm run lint:fix`; сборка сама файлы не исправляет.
+
+Проверка известных уязвимостей Web Admin (включая devDependencies) выполняется
+отдельно от build и требует доступа к npm registry:
+
+```sh
+docker compose --profile tools run --build --rm --no-deps web-checks npm run audit
+```
+
+CI запускает этот audit после основных проверок и отклоняет найденные уязвимости
+начиная с low. Версии и обоснование обновления:
+[ADR 0020](docs/adr/0020-web-dependency-security-update.md).
+
+RAG latency/throughput: Grafana http://localhost:3001/d/rag-performance (папка RAG).
+Показаны p50/p95 поиска и этапов, частота запросов, ошибки, abstention и ожидание
+слота. Prometheus собирает агрегаты с API `/internal/metrics`; SPA proxy закрывает
+этот endpoint. Настройки monitoring и значения histogram требуют реальных запросов
+и нескольких scrapes. [Семантика метрик](docs/adr/0021-rag-stage-prometheus-metrics.md).
+
+Query Rewriting for empty `/rag/ask` retrieval is enabled by
+`RAG_QUERY_REWRITING=true`; set it to `false` for the baseline. One rewrite attempt
+(maximum 10 seconds) retries the same retrieval mode with fresh ACL scopes.
+Answers use the original question; `/rag/search` stays model-free.
+See [ADR 0022](docs/adr/0022-query-rewriting.md) for limits and telemetry.
+
+Advanced RAG: choose Hybrid in the Playground (UI default), or send
+`retrieval_mode: "hybrid"` to `/rag/ask` or `/rag/search`. API default remains vector.
+FTS/vector baselines remain selectable. Hybrid uses RRF (k=60); `/rag/ask` may
+rerank authorized candidates with the configured Ollama chat model. Set
+`RAG_RERANKING=false` to compare RRF alone. `/rag/search` never invokes the chat
+model. This is an LLM reranker, not a cross-encoder; quality gains are not measured.
+See [ADR 0023](docs/adr/0023-advanced-rag.md) for ACL, scoring and failure behavior.

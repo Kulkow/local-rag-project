@@ -16,7 +16,7 @@ models:
 
 lock:
 	docker run --rm -v "$(CURDIR):/app" -w /app ghcr.io/astral-sh/uv:0.6.3-python3.12-bookworm uv lock
-	docker run --rm -v "$(CURDIR)/web-admin:/app" -w /app node:22.13.0-alpine npm install --package-lock-only --ignore-scripts
+	docker run --rm -v "$(CURDIR)/web-admin:/app" -w /app node:22.13.0-alpine npx --yes npm@11.21.1 install --package-lock-only --ignore-scripts
 
 lint-python:
 	docker compose --profile tools run --build --rm --no-deps checks uv run --frozen ruff check src migrations scripts tests

@@ -2,7 +2,7 @@
 up:
 	docker compose up -d --build
 migrate:
-	docker compose run --rm migrate
+	docker compose run --build --rm migrate
 down:
 	docker compose down
 check:

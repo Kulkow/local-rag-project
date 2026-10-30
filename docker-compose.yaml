@@ -77,6 +77,8 @@ services:
       start_period: 15s
   migrate:
     <<: *app
+    # Migrations must match this checkout, even when the shared image already exists.
+    pull_policy: build
     restart: 'no'
     command: [alembic, upgrade, head]
     depends_on:

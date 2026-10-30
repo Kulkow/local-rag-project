@@ -401,12 +401,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rag/ask/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask Stream */
+        post: operations["ask_stream_rag_ask_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rag/search/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Stream */
+        post: operations["search_stream_rag_search_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** AnswerView */
         AnswerView: {
+            llm_usage?: components["schemas"]["LlmUsage"] | null;
             /** Answer */
             answer: string;
             /** Abstained */
@@ -577,6 +612,28 @@ export interface components {
              */
             status: "ok";
         };
+        /** LlmCallUsage */
+        LlmCallUsage: {
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /**
+             * Stage
+             * @default generation
+             * @enum {string}
+             */
+            stage: "generation" | "query_rewriting" | "reranking";
+        };
+        /** LlmUsage */
+        LlmUsage: {
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Calls */
+            calls?: components["schemas"]["LlmCallUsage"][];
+        };
         /** LoginInput */
         LoginInput: {
             /** Username */
@@ -688,6 +745,47 @@ export interface components {
              * @default 5
              */
             top_k: number;
+        };
+        /** RagErrorView */
+        RagErrorView: {
+            llm_usage?: components["schemas"]["LlmUsage"] | null;
+            /** Detail */
+            detail: string;
+            /** Trace Id */
+            trace_id?: string | null;
+            /** Timings */
+            timings?: {
+                [key: string]: number;
+            };
+        };
+        /** RagStreamEvent */
+        RagStreamEvent: {
+            llm_usage?: components["schemas"]["LlmUsage"] | null;
+            /**
+             * Event
+             * @enum {string}
+             */
+            event: "progress" | "result" | "error";
+            /** Trace Id */
+            trace_id: string;
+            /** Timings */
+            timings: {
+                [key: string]: number;
+            };
+            /** Active Stages */
+            active_stages?: ("retrieval" | "scope" | "embedding_identity" | "query_embedding" | "query_rewriting" | "query_retry" | "keyword_search" | "vector_search" | "candidate_read" | "rrf" | "reranking" | "context" | "acl_revalidation" | "generation" | "citation_validation")[];
+            /**
+             * Waiting
+             * @default false
+             */
+            waiting: boolean;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            result?: components["schemas"]["AnswerView"] | null;
+            /** Detail */
+            detail?: string | null;
+            /** Code */
+            code?: string | null;
         };
         /** Readiness */
         Readiness: {
@@ -1620,6 +1718,42 @@ export interface operations {
                     "application/json": components["schemas"]["AnswerView"];
                 };
             };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1627,6 +1761,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
                 };
             };
         };
@@ -1653,6 +1805,42 @@ export interface operations {
                     "application/json": components["schemas"]["AnswerView"];
                 };
             };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1660,6 +1848,198 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+        };
+    };
+    ask_stream_rag_ask_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionInput"];
+            };
+        };
+        responses: {
+            /** @description SSE frames; each data field contains a RagStreamEvent JSON object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["RagStreamEvent"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+        };
+    };
+    search_stream_rag_search_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionInput"];
+            };
+        };
+        responses: {
+            /** @description SSE frames; each data field contains a RagStreamEvent JSON object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["RagStreamEvent"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagErrorView"];
                 };
             };
         };

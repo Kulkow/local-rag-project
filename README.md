@@ -37,7 +37,20 @@ Ollama runs on the host; containers use `host.docker.internal:11434`.
 No default administrator credentials are supplied. `.env` is ignored by Git.
 
 Migrations run once through the `migrate` service before API/worker startup.
-For later schema updates run `make migrate`. Do not delete named volumes to upgrade.
+The migration image is built from the current checkout on Compose startup (cached
+layers are reused). For later schema updates run `make migrate`, which also builds
+the image before running Alembic. A successful `migrate` container exits with code 0;
+it is not a long-running service.
+If an older container reports `Can't locate revision identified by '0012'` (or
+another revision present in `migrations/versions`), recreate it from current sources:
+
+```sh
+docker compose up -d --build --force-recreate migrate
+docker compose logs --tail=50 migrate
+docker compose ps -a migrate
+```
+
+Do not delete named volumes or reset Alembic's version to fix an outdated image.
 `docker compose down` preserves data. Rotate database user passwords through the
 Users page. Environment Basic credentials for `/ready` rotate separately by editing
 `.env` and recreating API/worker (`docker compose up -d --force-recreate api worker`).
@@ -511,3 +524,24 @@ rerank authorized candidates with the configured Ollama chat model. Set
 `RAG_RERANKING=false` to compare RRF alone. `/rag/search` never invokes the chat
 model. This is an LLM reranker, not a cross-encoder; quality gains are not measured.
 See [ADR 0023](docs/adr/0023-advanced-rag.md) for ACL, scoring and failure behavior.
+
+### Время этапов RAG
+
+В RAG Playground после поиска или ответа доступна таблица «Время этапов RAG»:
+ожидание слота, embedding, keyword/vector search, RRF, rewrite/retry, reranking,
+контекст, проверки доступа, генерация и проверка цитат. Показываются только
+выполненные этапы; общие интервалы включают вложенные и не складываются между собой.
+При серверной ошибке или таймауте доступны частичные измерения и Trace ID.
+Сетевой сбой может помешать получить диагностику. Формат API и границы измерений:
+[docs/api/rag.md](docs/api/rag.md#длительность-этапов-в-playground).
+
+Playground получает этапы и длительности через SSE во время выполнения запроса.
+Кнопка «Остановить» закрывает поток; итоговый ответ приходит после проверки цитат
+и доступа. Обычные JSON endpoints продолжают работать. Контракт SSE и ограничения:
+[ADR 0024](docs/adr/0024-rag-sse.md).
+
+В Playground рядом со временем этапов показаны **«Токены LLM»**: вход/выход,
+итог и разбивка по generation/rewrite/reranking. Это счётчики провайдера,
+обновляемые после каждого chat-вызова; неизвестные значения показаны как
+«Нет данных». При «Только поиск» chat-токены равны нулю. Агрегаты доступны в
+Prometheus как `rag_llm_tokens_total`. [Контракт и ограничения](docs/api/rag.md#токены-llm).

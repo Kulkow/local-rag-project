@@ -16,6 +16,7 @@ from app.modules.rag.application.rewriting import QueryRewriter, validated_rewri
 
 from app.modules.rag.application.telemetry import (
     Mode as Mode,
+    TokenCounts,
     RagMeasurements,
     RagObserver,
     NullRagObserver,
@@ -118,7 +119,9 @@ class VectorSearch(Protocol):
 
 
 class ChatProvider(Protocol):
-    async def answer(self, question: str, chunks: list[RetrievedChunk]) -> dict[str, object]: ...
+    async def answer(
+        self, question: str, chunks: list[RetrievedChunk], *, usage: TokenCounts | None = None
+    ) -> dict[str, object]: ...
 
 
 class AnswerQuestion:
@@ -156,9 +159,10 @@ class AnswerQuestion:
         mode: Mode,
         top_k: int,
         generate: bool,
+        measurements: RagMeasurements | None = None,
     ) -> RagResult:
         operation: Operation = "ask" if generate else "search"
-        measurements = RagMeasurements(self.observer, mode, operation)
+        measurements = measurements or RagMeasurements(self.observer, mode, operation)
         started = perf_counter()
         outcome: RunOutcome = "error"
         try:
@@ -173,7 +177,11 @@ class AnswerQuestion:
             outcome = "cancelled"
             raise
         finally:
-            self.observer.run(mode, operation, max(0.0, perf_counter() - started), outcome)
+            seconds = max(0.0, perf_counter() - started)
+            measurements.timings["total_ms"] = seconds * 1000
+            for key, value in measurements.timings.items():
+                measurements.timings[key] = round(value, 2)
+            self.observer.run(mode, operation, seconds, outcome)
 
     async def _retrieve(
         self,
@@ -254,7 +262,6 @@ class AnswerQuestion:
         generate: bool,
         measurements: RagMeasurements,
     ) -> RagResult:
-        started = perf_counter()
         with measurements.stage("retrieval"):
             with measurements.stage("scope"):
                 scopes = await self.repository.scopes(actor, family_id)
@@ -270,10 +277,13 @@ class AnswerQuestion:
             ):
                 rewritten = None
                 try:
-                    with measurements.stage("query_rewriting"):
+                    with (
+                        measurements.stage("query_rewriting"),
+                        measurements.llm_call("query_rewriting") as usage,
+                    ):
                         async with asyncio.timeout(self.rewrite_timeout):
                             rewritten = validated_rewrite(
-                                question, await self.rewriter.rewrite(question)
+                                question, await self.rewriter.rewrite(question, usage=usage)
                             )
                 except (TimeoutError, ApplicationError):
                     # Rewriting is optional; provider failure leaves the safe empty result.
@@ -295,10 +305,13 @@ class AnswerQuestion:
                 with measurements.stage("acl_revalidation"):
                     await self.repository.revalidate(actor, family_id, result.chunks)
                 try:
-                    with measurements.stage("reranking"):
+                    with (
+                        measurements.stage("reranking"),
+                        measurements.llm_call("reranking") as usage,
+                    ):
                         async with asyncio.timeout(self.rerank_timeout):
                             order = await self.reranker.rank(
-                                question, [chunk.text[:600] for chunk in result.chunks]
+                                question, [chunk.text[:600] for chunk in result.chunks], usage=usage
                             )
                             if valid_order(order, len(result.chunks)) and order is not None:
                                 result.chunks = [result.chunks[index] for index in order]
@@ -320,8 +333,8 @@ class AnswerQuestion:
         with measurements.stage("acl_revalidation"):
             await self.repository.revalidate(actor, family_id, result.chunks)
         if result.chunks and generate:
-            with measurements.stage("generation"):
-                output = await self.chat.answer(question, result.chunks)
+            with measurements.stage("generation"), measurements.llm_call("generation") as usage:
+                output = await self.chat.answer(question, result.chunks, usage=usage)
             with measurements.stage("citation_validation"):
                 answer, citations = output.get("answer"), output.get("citations")
                 insufficient = output.get("insufficient_evidence")
@@ -378,6 +391,4 @@ class AnswerQuestion:
                 result.answer = "В выбранной семье нет доступных вам документов с готовым индексом. Проверьте выбранную семью, доступ и статус обработки документов."
             if result.reason == "invalid_model_output":
                 result.answer += " " + " ".join(model_output_issues(output, len(result.chunks)))
-        result.timings["total_ms"] = (perf_counter() - started) * 1000
-        result.timings = {key: round(value, 2) for key, value in result.timings.items()}
         return result

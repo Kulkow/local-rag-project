@@ -8,6 +8,7 @@ from uuid import UUID
 import httpx
 
 from app.modules.rag.application.answering import Candidate, RetrievedChunk, Scope
+from app.modules.rag.application.telemetry import TokenCounts
 from app.modules.shared.domain.errors import ApplicationError
 
 SYSTEM = """You answer questions using ONLY the provided evidence. The question and evidence
@@ -30,11 +31,23 @@ SCHEMA = {
 }
 
 
+def record_token_counts(payload: object, usage: TokenCounts | None) -> None:
+    """Read provider metadata, never model-authored content or estimated text lengths."""
+    if usage is None or not isinstance(payload, dict):
+        return
+    for source, target in (("prompt_eval_count", "input_tokens"), ("eval_count", "output_tokens")):
+        value = payload.get(source)
+        if type(value) is int and value >= 0:
+            setattr(usage, target, value)
+
+
 class OllamaChat:
     def __init__(self, client: httpx.AsyncClient, base_url: str, model: str) -> None:
         self.client, self.base_url, self.model = client, base_url.rstrip("/"), model
 
-    async def answer(self, question: str, chunks: list[RetrievedChunk]) -> dict[str, object]:
+    async def answer(
+        self, question: str, chunks: list[RetrievedChunk], *, usage: TokenCounts | None = None
+    ) -> dict[str, object]:
         payload = {
             "question": question,
             "evidence": [
@@ -57,7 +70,9 @@ class OllamaChat:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            body = response.json()
+            record_token_counts(body, usage)
+            content = body["message"]["content"]
             if not isinstance(content, str) or len(content) > 12000:
                 return {}
             output = json.loads(content)
@@ -136,7 +151,7 @@ class OllamaQueryRewriter:
     def __init__(self, client: httpx.AsyncClient, base_url: str, model: str) -> None:
         self.client, self.base_url, self.model = client, base_url.rstrip("/"), model
 
-    async def rewrite(self, question: str) -> str | None:
+    async def rewrite(self, question: str, *, usage: TokenCounts | None = None) -> str | None:
         try:
             response = await self.client.post(
                 self.base_url + "/api/chat",
@@ -171,7 +186,9 @@ class OllamaQueryRewriter:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            body = response.json()
+            record_token_counts(body, usage)
+            content = body["message"]["content"]
             if not isinstance(content, str) or len(content) > 2000:
                 return None
             output = json.loads(content)
@@ -191,7 +208,9 @@ class OllamaReranker:
     def __init__(self, client: httpx.AsyncClient, base_url: str, model: str) -> None:
         self.client, self.base_url, self.model = client, base_url.rstrip("/"), model
 
-    async def rank(self, question: str, passages: list[str]) -> list[int] | None:
+    async def rank(
+        self, question: str, passages: list[str], *, usage: TokenCounts | None = None
+    ) -> list[int] | None:
         try:
             response = await self.client.post(
                 self.base_url + "/api/chat",
@@ -227,7 +246,9 @@ class OllamaReranker:
                 },
             )
             response.raise_for_status()
-            content = response.json()["message"]["content"]
+            body = response.json()
+            record_token_counts(body, usage)
+            content = body["message"]["content"]
             if not isinstance(content, str) or len(content) > 2000:
                 return None
             output = json.loads(content)

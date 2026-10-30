@@ -1,7 +1,7 @@
 import asyncio
 from time import perf_counter
-from collections.abc import AsyncIterator
-from typing import Annotated, Literal
+from collections.abc import AsyncGenerator
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import httpx
@@ -21,7 +21,7 @@ from app.modules.rag.infrastructure.providers import (
 )
 from app.modules.shared.domain.errors import ApplicationError
 from app.observability.rag_metrics import AdmissionOutcome, PrometheusRagObserver
-from app.modules.rag.application.telemetry import Operation
+from app.modules.rag.application.telemetry import Operation, RagMeasurements, LlmUsage
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
 
@@ -44,6 +44,7 @@ class SourceView(BaseModel):
 
 
 class AnswerView(BaseModel):
+    llm_usage: LlmUsage | None = None
     answer: str
     abstained: bool
     reason: str | None
@@ -56,7 +57,19 @@ class AnswerView(BaseModel):
     timings: dict[str, float]
 
 
-async def answering_use_case(request: Request) -> AsyncIterator[AnswerQuestion]:
+class RagErrorView(BaseModel):
+    llm_usage: LlmUsage | None = None
+    detail: str
+    trace_id: str | None = None
+    timings: dict[str, float] = Field(default_factory=dict)
+
+
+ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    code: {"model": RagErrorView} for code in (401, 403, 404, 409, 429, 503)
+}
+
+
+async def answering_use_case(request: Request) -> AsyncGenerator[AnswerQuestion, None]:
     config = request.app.state.settings
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(65, connect=5), follow_redirects=False
@@ -85,6 +98,30 @@ async def execute_query(
     actor: Principal,
     use_case: AnswerQuestion,
     generate: bool,
+    measurements: RagMeasurements | None = None,
+) -> AnswerView:
+    started = perf_counter()
+    measurements = measurements or RagMeasurements(
+        request.app.state.rag_metrics, body.retrieval_mode, "ask" if generate else "search"
+    )
+    request.state.rag_timings = measurements.timings
+    request.state.rag_measurements = measurements
+    try:
+        answer = await _execute_query(body, request, actor, use_case, generate, measurements)
+    finally:
+        measurements.timings["request_ms"] = round((perf_counter() - started) * 1000, 2)
+    answer.timings = dict(measurements.timings)
+    answer.llm_usage = measurements.usage_snapshot()
+    return answer
+
+
+async def _execute_query(
+    body: QuestionInput,
+    request: Request,
+    actor: Principal,
+    use_case: AnswerQuestion,
+    generate: bool,
+    measurements: RagMeasurements,
 ) -> AnswerView:
     gate: asyncio.Semaphore = request.app.state.rag_slots
     metrics: PrometheusRagObserver = request.app.state.rag_metrics
@@ -102,7 +139,9 @@ async def execute_query(
         admission = "throttled"
         raise ApplicationError("throttled", "Answer capacity reached; retry later") from None
     finally:
-        metrics.capacity(body.retrieval_mode, operation, perf_counter() - waiting, admission)
+        seconds = perf_counter() - waiting
+        measurements.timings["capacity_wait_ms"] = round(seconds * 1000, 2)
+        metrics.capacity(body.retrieval_mode, operation, seconds, admission)
     try:
         try:
             async with asyncio.timeout(80):
@@ -113,6 +152,7 @@ async def execute_query(
                     body.retrieval_mode,
                     body.top_k,
                     generate,
+                    measurements=measurements,
                 )
         except TimeoutError:
             raise ApplicationError("storage_unavailable", "Question request timed out") from None
@@ -144,7 +184,7 @@ async def execute_query(
         gate.release()
 
 
-@router.post("/ask", response_model=AnswerView)
+@router.post("/ask", response_model=AnswerView, responses=ERROR_RESPONSES)
 async def ask(
     body: QuestionInput,
     request: Request,
@@ -154,7 +194,7 @@ async def ask(
     return await execute_query(body, request, actor, use_case, True)
 
 
-@router.post("/search", response_model=AnswerView)
+@router.post("/search", response_model=AnswerView, responses=ERROR_RESPONSES)
 async def search(
     body: QuestionInput,
     request: Request,

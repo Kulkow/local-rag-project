@@ -5,8 +5,8 @@
 Подключаем нестриминговый RAG поверх существующего ingestion. POST /rag/search
 возвращает найденные выдержки без chat-вызова; POST /rag/ask добавляет локальный
 Ollama qwen3:4b. Режимы keyword и vector — отдельные baseline algorithms.
-Hybrid/RRF и reranking добавлены позднее в ADR 0023. LangGraph, SSE и evaluation
-management пока не реализованы.
+Hybrid/RRF и reranking добавлены позднее в ADR 0023, SSE прогресса — в ADR 0024.
+LangGraph и evaluation management пока не реализованы.
 Новых компонентов инфраструктуры, зависимостей и миграций нет.
 
 Keyword использует PostgreSQL generated search_vector ('simple') и search_vector_ru

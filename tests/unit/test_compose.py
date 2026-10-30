@@ -12,6 +12,41 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(shutil.which("docker"), "Docker CLI required to parse Compose")
 class ComposePackagingTests(unittest.TestCase):
+    def test_migrations_build_current_sources_before_dependents_start(self) -> None:
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "POSTGRES_PASSWORD": "configuration-test-only",
+                "JWT_SECRET": "configuration-test-only-signing-key",
+                "MINIO_ROOT_USER": "configuration-test-only",
+                "MINIO_ROOT_PASSWORD": "configuration-test-only",
+                "ADMIN_USERNAME": "configuration-test-only",
+                "ADMIN_PASSWORD": "configuration-test-only",
+            }
+        )
+        result = subprocess.run(
+            ["docker", "compose", "--profile", "monitoring", "config", "--format", "json"],
+            cwd=ROOT,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        services = json.loads(result.stdout)["services"]
+        migrate = services["migrate"]
+        self.assertEqual(migrate["pull_policy"], "build")
+        self.assertEqual(Path(migrate["build"]["context"]), ROOT)
+        self.assertEqual(migrate["build"]["target"], "runtime")
+        self.assertEqual(migrate["command"], ["alembic", "upgrade", "head"])
+        self.assertEqual(migrate["restart"], "no")
+        self.assertEqual(migrate["depends_on"]["postgres"]["condition"], "service_healthy")
+        for service in ("api", "worker", "queue-metrics"):
+            with self.subTest(service=service):
+                self.assertEqual(
+                    services[service]["depends_on"]["migrate"]["condition"],
+                    "service_completed_successfully",
+                )
+
     def test_minio_build_preserves_storage_and_health_dependency(self) -> None:
         environment = dict(os.environ)
         environment.update(

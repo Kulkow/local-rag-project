@@ -2,9 +2,11 @@
 
 from typing import Protocol
 
+from app.modules.rag.application.telemetry import TokenCounts
+
 
 class QueryRewriter(Protocol):
-    async def rewrite(self, question: str) -> str | None: ...
+    async def rewrite(self, question: str, *, usage: TokenCounts | None = None) -> str | None: ...
 
 
 def validated_rewrite(question: str, rewritten: object) -> str | None:

@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import asyncio
 import json
 import logging
@@ -20,6 +21,7 @@ from app.modules.shared.domain.errors import ApplicationError
 
 from app.modules.documents.api.routes import router as documents_router
 from app.modules.rag.api.routes import router as rag_router
+from app.modules.rag.api.streaming import router as rag_stream_router
 from app.modules.documents.application.extraction import ExtractorRegistry
 from app.modules.documents.infrastructure.pdf_extractor import PdfExtractor
 from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
@@ -85,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(families_router)
     app.include_router(documents_router)
     app.include_router(rag_router)
+    app.include_router(rag_stream_router)
 
     @app.exception_handler(ApplicationError)
     async def application_error(request: Request, exc: ApplicationError) -> JSONResponse:
@@ -103,7 +106,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         headers = {"WWW-Authenticate": "Bearer"} if status == 401 else {}
         if status == 429:
             headers["Retry-After"] = "60"
-        return JSONResponse({"detail": str(exc)}, status_code=status, headers=headers)
+        content: dict[str, object] = {"detail": str(exc)}
+        if hasattr(request.state, "rag_timings"):
+            content["timings"] = request.state.rag_timings
+            content["llm_usage"] = asdict(request.state.rag_measurements.usage_snapshot())
+            content["trace_id"] = request.state.request_id
+        return JSONResponse(content, status_code=status, headers=headers)
 
     @app.exception_handler(IntegrityError)
     async def integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:

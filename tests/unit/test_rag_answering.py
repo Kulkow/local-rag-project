@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -304,7 +304,7 @@ async def test_rewrite_retries_keyword_once_and_answers_original_question(setup:
     ]
     assert all(call.args[:2] == (actor, family_id) for call in repository.keyword.await_args_list)
     assert repository.scopes.await_count == 2
-    rewriter.rewrite.assert_awaited_once_with("How long are files kept?")
+    rewriter.rewrite.assert_awaited_once_with("How long are files kept?", usage=ANY)
     assert chat.answer.await_args.args[0] == "How long are files kept?"
     assert "query_rewriting_ms" in result.timings and "query_retry_ms" in result.timings
 
@@ -407,7 +407,7 @@ async def test_rewrite_deadline_and_cancellation(setup: tuple) -> None:
     repository.keyword.return_value = []
     use_case.rewriter = AsyncMock()
 
-    async def delayed(question: str) -> str:
+    async def delayed(question: str, **kwargs: object) -> str:
         await asyncio.sleep(1)
         return "retention"
 
@@ -456,7 +456,7 @@ async def test_hybrid_reranker_reorders_only_authorized_candidates(setup: tuple)
     use_case.reranker = reranker
     result = await use_case.execute(AsyncMock(), family_id, "retention", "hybrid", 1, True)
     assert result.reranked and result.chunks[0].chunk_id == b.chunk_id
-    reranker.rank.assert_awaited_once_with("retention", [a.text, b.text])
+    reranker.rank.assert_awaited_once_with("retention", [a.text, b.text], usage=ANY)
     assert "reranking_ms" in result.timings
     assert chat.answer.await_args.args[1] == result.chunks
 

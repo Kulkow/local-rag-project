@@ -1,27 +1,67 @@
 # Enterprise RAG Platform
 
-Docker-first reference project, Phase 1: FastAPI, async PostgreSQL, Alembic,
-Celery/Redis, Qdrant, MinIO, host-installed Ollama and Vue 3/Vite/PrimeVue 4/Pinia administration.
-Database-backed users, family administration and service monitoring are implemented.
-Document upload and queued PDF extraction/chunking/embedding indexing are implemented.
-Advanced RAG is implemented: PostgreSQL FTS + vector hybrid retrieval, RRF,
-optional local LLM reranking, ACL-filtered evidence and cited local answers.
-Agent workflows and quality evaluation remain future phases.
+Локальная платформа для поиска по документам и ответов на вопросы с указанием источников. Пользователь загружает документ, фоновый обработчик извлекает текст и строит индекс, а RAG-пайплайн находит доступные пользователю фрагменты и передаёт их локальной языковой модели.
 
-## Start
+Это учебный и портфолио-проект: он демонстрирует асинхронный Python, модульную архитектуру, обработку фоновых заданий, разграничение доступа и наблюдаемость. Коммерческое использование, качество ответов и прирост от отдельных методов поиска не заявляются как подтверждённые результаты.
 
-Docker Engine with Compose v2 and a running host-installed Ollama are required.
-The root configuration is `docker-compose.yaml`; `docker compose` finds it automatically.
-CPU operation is the default.
-Plan for 16 GB RAM (at least 10 GB allocated to Docker) and 20 GB free disk.
-Initial builds and model downloads require internet access.
+## Возможности и текущие границы
+
+| Область | Что реализовано |
+| --- | --- |
+| Документы | Загрузка PDF, DOCX и UTF-8 HTML до 10 MiB на файл; пакетная загрузка, контроль повторов, хранение оригиналов и метаданных. |
+| Индексация | Для PDF: извлечение текста → чанки по страницам → локальные эмбеддинги → PostgreSQL и Qdrant; очередь, повторы и переиндексация. DOCX/HTML пока только сохраняются. |
+| Поиск | Ключевой поиск PostgreSQL FTS, векторный поиск Qdrant и гибридный поиск с Reciprocal Rank Fusion (RRF). |
+| Ответы | Локальная генерация с цитатами, явный отказ при недостатке данных или некорректных цитатах, опциональные переформулировка вопроса и LLM-переранжирование. |
+| Доступ | JWT, роли admin/manager/member, семейные области доступа, видимость private/family, серверная проверка прав на документы. |
+| Web Admin | Состояние сервисов, семьи и пользователи, документы, RAG Playground, редактирование системного промпта. Playground показывает источники, оценки поиска, время этапов, токены LLM и trace ID; SSE передаёт прогресс. |
+| Наблюдаемость | Структурированные JSON-логи, метрики Prometheus, готовые дашборды Grafana для очереди и RAG. |
+
+LangGraph-агенты, Langfuse, версионированный golden dataset и сравнительные эксперименты качества остаются следующими этапами. Наличие гибридного поиска и переранжирования само по себе не доказывает улучшение качества.
+
+## Запуск
+
+### Требования
+
+Нужны Docker Engine с Compose v2 и **Ollama на хосте**. Python и Node.js на хосте не требуются; команды `make` — сокращения для Docker-команд из [Makefile](Makefile).
+
+Ориентир для локальной машины — 16 GB RAM, из них не менее 10 GB доступно Docker, и 20 GB свободного диска. Это рекомендация для начала работы, а не измеренный минимум: модели, документы и индексы требуют дополнительного места. Первые сборки и загрузки моделей требуют сети. CPU-режим поддерживается; ускорение GPU/Metal определяется установкой Ollama на хосте.
+
+Все прикладные сервисы запускаются через [docker-compose.yaml](docker-compose.yaml). Исключение для Ollama зафиксировано в [ADR 0002](docs/adr/0002-host-ollama.md): Compose не запускает и не управляет сервером моделей.
+
+### 1. Подготовить модели
+
+Запустите приложение Ollama либо `ollama serve`, если сервер ещё не работает. В другом терминале выполните:
+
+```sh
+ollama pull embeddinggemma:latest
+ollama pull qwen3:4b
+ollama list
+curl -fsS http://localhost:11434/api/tags
+```
+
+Модель эмбеддингов по умолчанию — `embeddinggemma:latest`, размерность — **768**; модель ответов — `qwen3:4b`. `make models` только выводит установленные модели и ничего не скачивает.
+
+### 2. Настроить окружение
 
 ```sh
 cp -n .env.example .env
-# Edit .env: set POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
-# ADMIN_USERNAME, ADMIN_PASSWORD and a separate random JWT_SECRET to your own values.
-# Use URL-safe random PostgreSQL passwords; MinIO password must be >=8 characters.
-make lock
+```
+
+Заполните `.env` собственными значениями:
+
+| Переменная | Назначение |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Пароль PostgreSQL; используйте URL-безопасные символы. |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | Локальные учётные данные MinIO; пароль не короче 8 символов. |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Начальный администратор: имя из 3–100 строчных ASCII-букв, цифр и символов `_.@-`; пароль 12–128 символов. |
+| `JWT_SECRET` | Отдельный случайный ключ подписи длиной не менее 32 символов. |
+| `OLLAMA_URL` | Адрес Ollama для контейнеров; по умолчанию `http://host.docker.internal:11434`. |
+
+Общих паролей по умолчанию нет. `.env` исключён из Git. Остальные параметры описаны в [.env.example](.env.example).
+
+### 3. Собрать и запустить
+
+```sh
 docker compose config --quiet
 docker compose up -d --build
 make bootstrap-admin
@@ -29,341 +69,214 @@ docker compose ps
 make smoke
 ```
 
-Web Admin: http://localhost:3000 — after `make bootstrap-admin`, sign in with
-ADMIN_USERNAME and ADMIN_PASSWORD to check live services. API/OpenAPI: http://localhost:8000/docs. MinIO: http://localhost:9001.
-Browser API calls use Nginx `/api`; no cross-origin CORS access is enabled.
-Container ports bind only to localhost. Databases and object API are internal.
-Ollama runs on the host; containers use `host.docker.internal:11434`.
-No default administrator credentials are supplied. `.env` is ignored by Git.
+Compose автоматически находит `docker-compose.yaml`. Сервис `migrate` применяет Alembic-миграции перед запуском API и worker, затем завершается с кодом 0 — это ожидаемое поведение. `make bootstrap-admin` создаёт пользователя из `.env`, но не сбрасывает пароль уже существующей записи.
 
-Migrations run once through the `migrate` service before API/worker startup.
-The migration image is built from the current checkout on Compose startup (cached
-layers are reused). For later schema updates run `make migrate`, which also builds
-the image before running Alembic. A successful `migrate` container exits with code 0;
-it is not a long-running service.
-If an older container reports `Can't locate revision identified by '0012'` (or
-another revision present in `migrations/versions`), recreate it from current sources:
+Зависимости зафиксированы в `uv.lock` и `web-admin/package-lock.json`. Для обычного запуска пересоздавать их не нужно. `make lock` предназначен для обновления lock-файлов с последующей проверкой изменений.
+
+MinIO собирается из исходников через [infra/minio/Dockerfile](infra/minio/Dockerfile); первая сборка может занять несколько минут. Обоснование и ограничения выбранной версии — в [ADR 0003](docs/adr/0003-minio-source-build.md).
+
+| Сервис | Адрес |
+| --- | --- |
+| Web Admin | http://localhost:3000 |
+| FastAPI / OpenAPI | http://localhost:8000/docs |
+| MinIO Console | http://localhost:9001 |
+| Grafana, после включения monitoring | http://localhost:3001 |
+
+Браузер обращается к API через Nginx-прокси `/api`. Опубликованные порты привязаны к `127.0.0.1`; PostgreSQL, Redis, Qdrant и S3 API MinIO доступны внутри Compose. Данные хранятся в именованных томах. `docker compose down` останавливает стек с сохранением данных.
+
+### 4. Пройти основной сценарий
+
+1. Войдите в Web Admin с `ADMIN_USERNAME` и `ADMIN_PASSWORD`.
+2. Создайте семью; при необходимости добавьте участников и связанные учётные записи.
+3. На странице **Документы** загрузите PDF с текстовым содержимым и выберите видимость `private` или `family`.
+4. Обновляйте список до завершения обработки. Проверьте состояние индекса и откройте извлечённый текст. Ошибку можно диагностировать и повторить обработку через переиндексацию.
+5. Откройте **RAG Playground**, выберите семью, режим поиска и задайте вопрос по документу.
+6. Сравните «Только поиск» и «Получить ответ», проверьте цитаты, фрагменты, длительности и расход токенов. Оригинал можно скачать из карточки источника после проверки доступа сервером.
+
+Playground выбирает `hybrid` по умолчанию; API без явного `retrieval_mode` использует `vector`. «Только поиск» не вызывает chat-модель, однако vector/hybrid требуют модель эмбеддингов. SSE передаёт этапы выполнения; итоговый ответ появляется после проверки цитат и прав, а не потоком непроверенных токенов.
+
+Пример JSON API после получения JWT и идентификатора доступной семьи:
 
 ```sh
-docker compose up -d --build --force-recreate migrate
-docker compose logs --tail=50 migrate
-docker compose ps -a migrate
+curl -fsS http://localhost:8000/rag/ask \
+  -H 'Authorization: Bearer YOUR_JWT' \
+  -H 'Content-Type: application/json' \
+  -d '{"family_id":"YOUR_FAMILY_UUID","question":"Каков срок хранения документов?","retrieval_mode":"hybrid","top_k":5}'
 ```
 
-Do not delete named volumes or reset Alembic's version to fix an outdated image.
-`docker compose down` preserves data. Rotate database user passwords through the
-Users page. Environment Basic credentials for `/ready` rotate separately by editing
-`.env` and recreating API/worker (`docker compose up -d --force-recreate api worker`).
-Changing PostgreSQL/MinIO credentials for existing volumes needs service-specific
-credential rotation; editing environment variables alone does not rotate stored users.
-Use TLS and real session management before exposing this local reference remotely.
+Контракты входа, загрузки и RAG: [пользователи и семьи](docs/api/families-and-users.md), [документы](docs/api/document-upload.md), [поиск и ответы](docs/api/rag.md).
 
-## Verification
+## Архитектура
 
-```sh
-curl -fsS http://localhost:8000/health
-# curl prompts for password, avoiding it in shell history:
-curl -i -u YOUR_ADMIN_USERNAME http://localhost:8000/ready
-make check
-make smoke
-docker compose exec worker celery -A app.infrastructure.queue.tasks:celery_app inspect ping
+Backend — **модульный монолит** на Python 3.12 и FastAPI. API и Celery worker используют общие прикладные сценарии и инфраструктурные адаптеры. Web Admin — клиентская Vue 3 SPA с Vite, TypeScript, PrimeVue 4 и Pinia.
+
+```mermaid
+flowchart LR
+    Browser[Браузер] --> Web[Vue SPA / Nginx]
+    Web -->|REST / SSE через /api| API[FastAPI]
+    API --> PG[(PostgreSQL)]
+    API --> MinIO[(MinIO)]
+    API --> Qdrant[(Qdrant)]
+    API --> Ollama[Ollama на хосте]
+    Redis[(Redis / Celery)] <--> Worker[Worker + beat]
+    Worker -->|Задания, текст, чанки| PG
+    Worker --> MinIO
+    Worker --> Qdrant
+    Worker --> Ollama
+    Prometheus[Prometheus] -->|Сбор метрик| API
+    Prometheus --> Exporter[Экспортёр очереди]
+    Exporter --> PG
+    Exporter --> Redis
+    Grafana[Grafana] --> Prometheus
 ```
 
-`/health` is public liveness. `/ready` requires server-validated admin credentials,
-returns 200 when all five dependencies are available, otherwise 503 with boolean
-service states. Database readiness requires the migration marker. Request responses
-include X-Request-ID and Server-Timing. Logs contain JSON request metadata without
-credentials, prompts, query strings or document contents. Worker health is checked
-separately using Celery; readiness does not claim worker or model inference health.
+| Компонент | Ответственность |
+| --- | --- |
+| PostgreSQL + SQLAlchemy async + Alembic | Учётные записи, семьи, права, метаданные, состояния заданий, чанки, FTS и системный промпт. |
+| MinIO | Оригиналы документов и извлечённые артефакты. |
+| Qdrant | Векторы с метаданными для фильтрации по области доступа, документу и поколению индекса. |
+| Celery + Redis | Выполнение фоновых задач. Долговечная запись задания хранится в PostgreSQL. |
+| Ollama | Локальные эмбеддинги, генерация ответа, опциональные rewrite и reranking. |
+| Prometheus + Grafana | Агрегированные метрики и дашборды; необязательный профиль `monitoring`. |
 
-`make check` runs Ruff lint/format, strict mypy, pytest (including an actual migrated
-PostgreSQL integration test), frontend API tests, TypeScript and Vite build in Docker.
-Normal unit tests need no model. CI uses Docker and an isolated PostgreSQL database.
-Direct dependencies are pinned. This environment could not reach PyPI/npm to generate
-lockfiles. Before the first reproducible build run `make lock` (Docker only), review
-and commit `uv.lock` and `web-admin/package-lock.json`. Builds without those files
-bootstrap dependency resolution and are not yet fully reproducible. Once generated,
-Python sync uses the lock and npm uses `npm ci`.
-Regenerate frontend schemas after API changes:
+Код сгруппирован по предметным модулям:
 
-```sh
-docker compose --profile tools run --rm -v "$PWD/web-admin:/app/web-admin" checks uv run --frozen python scripts/export_openapi.py
-docker compose --profile tools run --rm -v "$PWD/web-admin:/contract" web-checks npx openapi-typescript /contract/openapi.json -o /contract/src/shared/infrastructure/schema.ts
+```text
+src/app/
+  main.py                # Сборка приложения и зависимостей
+  modules/
+    identity/            # Аутентификация, пользователи и роли
+    families/            # Семьи, участники и права доступа
+    documents/           # Загрузка, извлечение, задания, индексация
+    rag/                 # Поиск, ответы, цитаты и настройки промпта
+    operations/          # Проверки готовности сервисов
+    shared/              # Общие доменные ошибки
+  infrastructure/        # Подключение к БД и Celery
+  observability/         # Логи и экспорт метрик
+  core/                  # Конфигурация
+migrations/              # История схемы Alembic
+web-admin/src/modules/   # Доменные модули Vue SPA
+infra/                   # MinIO, Prometheus и Grafana
+scripts/                 # Экспорт OpenAPI и smoke-сценарии
+tests/                   # Unit- и интеграционные тесты
+docs/                    # API, архитектура и ADR
 ```
 
-## Models
+Внутри модулей разделены `domain`, `application`, `infrastructure` и `api`. Домен и прикладные сценарии не зависят от FastAPI, SQLAlchemy, Qdrant или Celery; адаптеры реализуют прикладные порты. Аналогичные границы frontend проверяет ESLint. Подробнее: [ADR 0005](docs/adr/0005-ddd-modules.md) и [ADR 0019](docs/adr/0019-web-admin-ddd-lint.md).
 
-The local model store contains `qwen3:4b` and `embeddinggemma:latest`.
-These are selected in `.env` and `.env.example`. Availability was confirmed from
-local manifest files; embedding inference is now covered by the ingestion smoke test; chat inference has not been tested.
+### Обработка документов
 
-```sh
-ollama list
-# Start Ollama using the installed application, or if no server is already running:
-ollama serve
-# In another terminal, verify the host API:
-curl -fsS http://localhost:11434/api/tags
-```
+Загрузка PDF сохраняет метаданные и задание в PostgreSQL. Worker извлекает текст, делит его на детерминированные чанки по страницам, получает эмбеддинги и обновляет PostgreSQL/Qdrant. Сбой Redis в момент фиксации загрузки не теряет запись задания в БД.
 
-`make models` lists the host's installed models and does not download anything.
-The Compose stack does not start or manage an Ollama container. Stop/start of the
-stack preserves the existing host model store. API readiness probes the configured
-`OLLAMA_URL`; model selection is configuration for subsequent ingestion/answering
-phases and does not yet trigger inference. Embedding dimensions are validated during ingestion.
+Состояния задания: `queued → processing → succeeded`; временная ошибка переводит его в `retry_wait`, постоянная ошибка или исчерпание трёх попыток — в `failed`. Worker запускается одной репликой с `concurrency=1`, `prefetch=1` и встроенным beat. Масштабирование требует пересмотра этой схемы. Модель, digest и размерность учитываются при выборе совместимого индекса.
 
-On Docker Desktop for macOS, containers connect through `host.docker.internal`.
-If the API reports Ollama unavailable, check connectivity from a container:
+[Модель хранения документов](docs/architecture/document-metadata.md) · [Очередь](docs/adr/0011-processing-queue-monitoring.md) · [Чанкинг и эмбеддинги](docs/adr/0012-chunking-embeddings.md).
 
-```sh
-docker compose run --rm --no-deps api python -c 'import os,httpx; r=httpx.get(os.environ["OLLAMA_URL"]+"/api/tags",timeout=5); r.raise_for_status(); print(r.json())'
-```
+### Поиск и ответ
 
-A host Ollama bound only to loopback may need its listen address configured to
-accept Docker traffic. For a manually launched server, use
-`OLLAMA_HOST=0.0.0.0:11434 ollama serve` after stopping the existing server, and
-restrict inbound access with the host firewall: Ollama has no application-level
-authentication. For a managed application, configure its server environment instead.
-Linux also requires a reachable listen address; the Compose host-gateway mapping
-provides the hostname. Set `OLLAMA_URL` in `.env` if using another address.
+Сначала сервер определяет доступные документы. Keyword-поиск применяет SQL-ограничения, vector-поиск — фильтры Qdrant с дополнительной проверкой кандидатов в PostgreSQL. В hybrid результаты объединяются через RRF (`k=60`); опциональный LLM-reranker меняет порядок кандидатов. Далее ограничивается контекст, повторно проверяются права, генерируется ответ и проверяются цитаты и доступ.
 
-Hardware acceleration is managed by the host Ollama installation. No GPU device
-mapping is needed in Compose. Model performance has not been measured.
+При пустом поиске `/rag/ask` допускает одну переформулировку с повторным поиском. Если источников нет, модель считает их недостаточными или ответ не проходит проверку формата/цитат, возвращается явный отказ. Корректные номера цитат не доказывают смысловую достоверность: ответ нужно сверять с источниками.
 
-## Layout and limitations
+Семья — текущая область разграничения доступа; `private`/`family` задают видимость документа. Права проверяются сервером до передачи текста модели. Содержимое документа считается недоверенными данными, а модель не используется как механизм авторизации.
 
-Backend is organized by DDD modules under `src/app/modules`:
-`families/domain` owns family entities and relationship rules;
-`families/infrastructure` owns SQLAlchemy mappings;
-`operations/application` owns readiness orchestration and probe ports;
-`operations/infrastructure` implements probes, and `operations/api` exposes HTTP.
-`main.py` composes adapters, `api/security.py` handles local HTTP authentication,
-`core` contains settings, and shared `infrastructure` contains the engine and Celery.
-`migrations` owns schema history; `web-admin` remains the Vue SPA.
-See [ADR 0005](docs/adr/0005-ddd-modules.md) for module boundaries and dependencies.
+[Архитектура Advanced RAG](docs/architecture/advanced-rag.md) · [Режимы поиска и ограничения](docs/adr/0023-advanced-rag.md) · [SSE](docs/adr/0024-rag-sse.md).
 
-Local verification in the authoring environment is recorded below. Full stack startup
-requires Docker socket access; do not interpret generated configuration as a measured
-production result. Observability services remain outside the critical startup path.
+## Настройки RAG
 
-## Authoring environment verification
+| Параметр | По умолчанию | Значение |
+| --- | --- | --- |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `embeddinggemma:latest` / `768` | Модель и ожидаемая размерность; несовпадение завершает индексацию ошибкой. |
+| `CHAT_MODEL` | `qwen3:4b` | Модель генерации, rewrite и reranking. |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `150` | Размер окна и перекрытие в Unicode-символах, не токенах. |
+| `EMBEDDING_BATCH_SIZE` | `8` | Размер пакета эмбеддингов. |
+| `MAX_DOCUMENT_CHUNKS` | `2000` | Ограничение числа чанков документа. |
+| `RAG_MIN_VECTOR_SCORE` | `0.35` | Исходный cosine-порог; пока не откалиброван на golden dataset. |
+| `RAG_QUERY_REWRITING` | `true` | Одна попытка rewrite при пустом поиске в `/rag/ask`. |
+| `RAG_RERANKING` | `true` | LLM-переранжирование для hybrid-ответов. |
+| `top_k` в запросе API | `5` | Число фрагментов, допустимо от 1 до 8. |
 
-- `docker compose config --quiet`: passed with explicitly supplied configuration.
-- `python3 -m compileall -q src migrations tests scripts`: passed.
-- Docker daemon access: denied by the environment; stack, migrations, database
-  integration and container health checks could not be run.
-- PyPI/npm DNS resolution: unavailable; lock generation, Ruff, mypy, pytest and
-  frontend build/tests could not be completed here. Run `make lock`, `make up`,
-  `make check` and `make smoke` on a Docker-capable machine with network access.
-- `.env` was initialized locally with random credentials and is not a tracked file.
+После изменения `.env` пересоздайте API/worker: `docker compose up -d --force-recreate api worker`. После смены embedding-модели или параметров чанкинга явно переиндексируйте документы. Для сравнения базовых режимов отключайте rewrite и reranking. Оценки keyword, vector и RRF имеют разный смысл и напрямую не сравниваются.
 
-## Python deprecation checks
+На странице [Настройки](http://localhost:3000/settings) администратор может менять общий системный промпт генерации. Он хранится в PostgreSQL, применяется к новым вызовам без перезапуска и защищён от перезаписи устаревшей версией формы. «Вернуть стандартный текст» меняет черновик; для применения требуется «Сохранить». Сохраняйте требования к JSON и цитатам. API `GET/PUT /settings/rag` доступен только admin; длина промпта — 1–8000 символов. Миграция `0013` входит в обычный `make migrate`. [Контракт и ограничения](docs/adr/0025-editable-rag-system-prompt.md).
 
-`make lint-python` runs the pinned Ruff version against application code, migrations,
-scripts and tests without starting dependent services. Rules include pyupgrade (`UP`)
-with Python 3.12 as the explicit target, including deprecated imports (`UP035`).
-The same settings apply to `make check`, CI and pre-commit. These checks cover
-known Python patterns, not every third-party library's deprecated API or package
-support lifecycle. Full checks also run strict mypy.
+## Метрики и наблюдаемость
 
-The authoring environment could not install Ruff (PyPI DNS unavailable) or run
-Docker (socket access denied). A limited AST scan of known legacy imports and
-API calls and Python 3.12 syntax compilation found no matches/errors; this does
-not constitute a successful Ruff or mypy run.
-
-## MinIO image availability
-
-The old `minio/minio` Docker Hub image may return `pull access denied` even without
-any local authentication problem. Quay availability is also not assumed. Compose
-now builds `enterprise-rag-minio:local` using `infra/minio/Dockerfile`, from upstream
-release `RELEASE.2024-12-18T13-15-44Z`, commit
-`16f8cf1c52f0a77eeb8f7565aaf7f7df12454583`. The existing storage version and volume
-are retained; no replacement storage engine or data migration is introduced.
+### Включить мониторинг
 
 ```sh
-docker compose build minio
-docker compose up -d --build
-docker compose ps
-# Once API is running and healthy:
-make smoke
-```
-
-The first build compiles Go source and can take several minutes; GitHub, Docker Hub
-(base Go/Alpine images), Alpine package repositories and Go module servers must be
-reachable. Go dependencies are checked against upstream go.sum. The build supports
-the Docker host architecture, including ARM64. MinIO runs as UID 10001 and exposes a
-readiness healthcheck before the API starts. Existing volumes previously written by
-another UID may require a deliberate ownership adjustment; do not delete the volume.
-This preserves an old reference-project release, not an assertion that it is current
-or security-maintained. Upstream repository is archived; see ADR 0003.
-
-`service "api" is not running` from `make smoke` is a secondary error when startup
-failed earlier. Resolve the build/startup error first. Useful diagnostics:
-`docker compose logs --tail=100 minio migrate api`. Do not run `down -v` to fix a pull
-error. Local source build and runtime remain unverified in the authoring sandbox
-because Docker socket access is denied.
-
-## Family data schema
-
-Migration `0002` adds `families`, `persons`, `family_members`,
-`person_relationships`, `pets` and `pet_owners`, with UUID keys, foreign keys,
-uniqueness checks and timestamp triggers. These records are separate from
-administrator authentication. Family and user HTTP endpoints are described in
-[the API guide](docs/api/families-and-users.md).
-See [ADR 0004](docs/adr/0004-user-role.md) for relationship direction, nullable
-fields and deletion rules. Families with pets cannot be deleted until those pets
-are explicitly moved or deleted. Existing people survive family deletion.
-
-Apply with `docker compose build migrate && make migrate`. The integration test
-`tests/integration/test_family_schema.py` uses synthetic records inside a rolled-back
-transaction and requires `TEST_DATABASE_URL` pointing to a migrated database.
-
-Schema 0002 was applied to the local PostgreSQL 16 instance; the database reports
-revision `0002` and all six tables.
-
-DDD refactoring verification: Ruff lint and formatting passed; strict mypy passed
-for all 25 source files. Docker pytest completed with 19 passed and 1 skipped;
-the skipped Compose packaging test requires a Docker CLI inside the checks image
-and passed separately on the host using
-`python3 -m unittest discover -s tests/unit -p test_compose.py`.
-Tests include real PostgreSQL constraints, domain-to-ORM round trips, layer import
-boundaries, readiness failures/timeouts/cancellation and the existing HTTP contract.
-No database schema change is required for the module refactoring.
-Rebuild the API and worker to use the new code: `docker compose up -d --build api worker`.
-
-## Users and family administration
-
-Database-backed authentication and family management are now available. After
-building the updated images, run `make migrate` and `make bootstrap-admin` explicitly.
-Bootstrap reads your ADMIN_USERNAME/ADMIN_PASSWORD, requires a password of at least
-12 characters and never resets an existing user. Sign in at
-http://localhost:3000/families to create a family and members, then open
-http://localhost:3000/users to create accounts linked to those members.
-
-System roles are admin (all families/accounts), manager (own family management),
-and member (own family read only). The account has one unique family_member_id;
-family roles such as parent do not grant application permissions. JWT access tokens expire
-in eight hours and are stored by Pinia in localStorage. On reload, /auth/me
-validates the saved token before granting UI access. Logout or user changes
-revoke all their JWTs through users.token_version. JWT_SECRET is required. The dashboard also uses database login; environment
-HTTP Basic remains available only to `/ready` and smoke checks.
-
-See [setup and API guide](docs/api/families-and-users.md) and
-[ADR 0006](docs/adr/0006-identity-family-access.md) for commands, rotation,
-authorization rules, limitations and the frontend dependency audit findings.
-
-Local verification of identity/family administration: Python lint/format/mypy
-passed; pytest 25 passed, 1 skipped (Compose packaging passed separately on host).
-Frontend 14 tests, TypeScript and Vite build passed. Updated API/worker/Web Admin
-containers are healthy. Nginx-proxied login, authorized reads, readiness, logout
-and rejection of the revoked token were verified. Visual browser QA was unavailable.
-
-
-JWT authentication replaces server-side auth sessions; see
-[ADR 0007](docs/adr/0007-jwt-pinia.md). Set a distinct random JWT_SECRET in .env,
-apply migration 0004 and rebuild API/worker/Web Admin. The local key was generated
-without logging its value. Old opaque access tokens require a new login.
-
-JWT update verification: Ruff lint/format and mypy passed; Python pytest 35 passed,
-1 skipped (Compose CLI test passed separately). Frontend 19 tests, TypeScript and
-Vite build passed. Updated containers are healthy. Nginx checks verified signed
-JWT login, rejection of a tampered signature and revocation of both issued tokens
-on logout. localStorage restoration is covered by component tests; visual browser
-QA was unavailable.
-
-## Document upload for RAG
-
-Модель хранения: [метаданные документов](docs/architecture/document-metadata.md) —
-таблицы, ER-диаграмма, состояния, доступ и связь с объектами MinIO.
-
-Open http://localhost:3000/documents. Any authenticated user with access to a family can upload a PDF,
-DOCX or UTF-8 HTML file up to 10 MiB, with private or family visibility. Originals
-are stored in MinIO and metadata/checksum/upload status in PostgreSQL (migration
-0005). Members can view accessible document metadata. JWT/Pinia login is reused.
-
-**Uploaded documents are not indexed yet.** PDF text extraction now runs through
-the processing queue described below, followed by chunks and embedding indexing. Authorized RAG search/answering are described in the RAG section below.
-POST /documents accepts a raw binary body with Idempotency-Key; safe retries reuse
-the original record. See [upload/API guide](docs/api/document-upload.md) and
-[DDD/TDD ADR](docs/adr/0008-document-upload.md).
-
-Build the updated API and Web Admin, run `make migrate`, then start the services.
-Local MinIO credentials are passed from the existing environment; no new secrets
-are committed. DOCUMENTS_BUCKET defaults to rag-documents. Live object-storage
-checks are opt-in with TEST_OBJECT_STORAGE=1; ordinary unit tests need no LLM.
-
-Upload verification: TDD red/green is recorded in ADR 0008. Ruff lint/format and
-mypy passed; Python pytest with live MinIO enabled: 55 passed, 1 skipped (Compose
-CLI test passed separately on host). Frontend: 27 tests and production build passed.
-The API → PostgreSQL → MinIO test verified exact original bytes. Updated containers
-are healthy; the documents page and protected API were checked through Nginx.
-Visual browser QA was unavailable.
-
-### Automatic PDF preparation from the upload form
-
-PDF upload now commits a durable processing job with its metadata. Web Admin uses
-`POST /documents/{id}/process` to confirm/retry scheduling, without waiting for
-text extraction. Refresh the document list to see status and use «Просмотреть текст»
-after success. DOCX/HTML currently remain stored without extraction. See the queue
-section below for worker startup, Grafana and failure recovery.
-
-Document metadata lifecycle rules are implemented in the immutable `Document` and
-`Extraction` entities. PostgreSQL adapters use these transitions together with
-conditional updates for concurrency protection; MinIO stores original and extracted
-bytes. See [ADR 0010](docs/adr/0010-document-domain-lifecycle.md) for invariants and
-[the data model](docs/architecture/document-metadata.md) for fields and constraints.
-
-## Очередь обработки и Grafana (один обработчик)
-
-PDF после успешной загрузки атомарно получает задание в PostgreSQL. Worker
-последовательно извлекает текст через Celery/Redis: concurrency=1, prefetch=1,
-одна реплика и embedded beat. DOCX/HTML пока только сохраняются.
-Доступ проверяется повторно при выполнении. После извлечения создаются чанки и
-эмбеддинги; API ответов доступен через /rag/ask.
-
-```sh
-docker compose build api
-make migrate
-docker compose up -d --build api worker web-admin
-# Необязательно: отдельные Grafana credentials в .env; иначе используются
-# уже заданные ADMIN_USERNAME/ADMIN_PASSWORD. Общих паролей по умолчанию нет.
 docker compose --profile monitoring up -d --build queue-metrics prometheus grafana
 ```
 
-Grafana: http://localhost:3001/d/document-processing — dashboard `Document Processing Queue`
-в папке RAG. Datasource Prometheus и панели устанавливаются автоматически.
-При первом запуске используются GRAFANA_ADMIN_USER/GRAFANA_ADMIN_PASSWORD либо
-локальные admin credentials из .env. Смена env не меняет пароль существующего
-Grafana-пользователя: используйте управление пользователями Grafana.
-Prometheus и exporter доступны только внутри Compose. Monitoring не обязателен
-для API/worker и не влияет на их readiness. Данные Grafana/Prometheus — в named volumes.
+Grafana использует `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`, а если они пусты — явно заданные `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Изменение `.env` не меняет пароль уже созданного пользователя Grafana.
 
-Проверка: загрузите PDF через Documents и нажмите «Обновить» для состояния очереди.
-Готовый текст открывается через «Просмотреть текст». Для старого PDF или failed job
-кнопка «Переиндексировать» создаёт/повторяет задание. Внешний API:
+Дашборды создаются автоматически:
 
-```sh
-curl -i -X POST http://localhost:8000/documents/DOCUMENT_UUID/process \
-  -H 'Authorization: Bearer YOUR_JWT'
-curl -fsS http://localhost:8000/documents/DOCUMENT_UUID/processing \
-  -H 'Authorization: Bearer YOUR_JWT'
-docker compose logs --tail=50 worker
-docker compose --profile monitoring ps
+- [Document Processing Queue](http://localhost:3001/d/document-processing): состояния заданий, ожидание, heartbeat worker, сообщения Redis, проиндексированные документы и чанки.
+- [RAG Performance](http://localhost:3001/d/rag-performance): p50/p95, длительности этапов, частота запросов, ошибки, отмены, отказы от ответа и ожидание слота.
+
+Monitoring не входит в критический путь запуска. Prometheus и экспортёр очереди доступны внутри Compose. API отдаёт агрегаты на `/internal/metrics`; Nginx закрывает `/api/internal/*` от браузерного прокси, прямой локальный порт API оставляет endpoint доступным оператору.
+
+### Что измеряется сейчас
+
+| Метрика Prometheus | Смысл |
+| --- | --- |
+| `rag_request_duration_seconds` | Время выполнения принятого RAG-запроса без ожидания слота; основа p50/p95. |
+| `rag_stage_duration_seconds` | Время выполненных этапов: embedding, поиск, RRF, rewrite, reranking, генерация, проверки прав и цитат. |
+| `rag_requests_total` | Завершённые вызовы по исходам: `answered`, `abstained`, `search_only`, `error`, `cancelled`. |
+| `rag_capacity_wait_seconds` | Время ожидания допуска, включая отклонённые и отменённые запросы. |
+| `rag_llm_tokens_total` | Известные провайдеру входные/выходные chat-токены по этапам; эмбеддинги не включены. |
+| `rag_document_jobs` | Текущее количество заданий по статусам; это gauge, не счётчик попыток. |
+| `rag_document_queue_oldest_seconds` | Возраст самого старого ожидающего задания. |
+| `rag_document_processing_average_seconds` | Среднее время последней попытки сохранённых завершённых заданий. |
+| `rag_document_worker_heartbeat` / `rag_celery_broker_messages` | Наличие heartbeat за последние 600 секунд / длина очереди Redis с учётом служебных tick-сообщений. |
+| `rag_indexed_documents` / `rag_indexed_chunks` | Текущие количества проиндексированных документов и чанков по PostgreSQL. |
+
+В Playground доступны измерения отдельного запроса: `trace_id`, `timings` и токены по LLM-вызовам. Неизвестные значения токенов не подменяются оценками. Длительности вложены друг в друга: например, retrieval включает поиск и подготовку контекста, поэтому сумму всех строк нельзя считать общей задержкой.
+
+Пример p95 за пять минут, отдельно по режимам и операциям:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le, mode, operation) (
+    rate(rag_request_duration_seconds_bucket[5m])
+  )
+)
 ```
 
-Состояния: queued → processing → succeeded; transient error → retry_wait → processing;
-после трёх попыток или постоянной ошибки — failed (сохраняемая dead-letter область).
-При падении worker lease истекает через 10 минут, затем работа может продолжиться.
-Успешный upload не зависит от доступности Redis в момент commit: задания остаются в БД.
-Производительность не измерялась; один tick забирает одно задание раз в пять секунд.
-Не масштабируйте worker с embedded beat. Старый синхронный /extract оставлен для
-диагностики и обходит очередь; для последовательного теста используйте /process.
+Для графиков нужны реальные запросы и несколько циклов сбора. Короткое окно и малая выборка не являются бенчмарком. Счётчики RAG локальны процессу и сбрасываются при перезапуске; текущая конфигурация рассчитана на один API-процесс. В labels нет текстов документов, вопросов, ответов и пользовательских идентификаторов. [Семантика метрик](docs/adr/0021-rag-stage-prometheus-metrics.md).
 
-Grafana показывает актуальные статусы, heartbeat, возраст ожидания, среднее время
-финальной попытки и сообщения Redis. Нет фиктивных метрик или пользовательских
-данных в labels. Подробности и ограничения: [ADR 0011](docs/adr/0011-processing-queue-monitoring.md).
+### Оценка качества — следующий этап
 
-Реальный smoke-тест очереди (synthetic PDF, автоматическая очистка своих объектов
-и записей; требует запущенных API/worker и monitoring):
+Сравнительных результатов на golden dataset пока нет. Планируемая оценка должна отдельно измерять:
+
+| Метрика | Что проверяет |
+| --- | --- |
+| Recall@K | Долю ожидаемых релевантных источников, найденных в первых K результатах. |
+| MRR | Среднее обратное место первого релевантного результата. |
+| Корректность цитат | Подтверждают ли указанные источники утверждения ответа. |
+| Faithfulness | Насколько ответ опирается на предоставленные фрагменты. |
+| Поведение отказов | Отказы при отсутствии доказательств и лишние отказы на отвечаемых вопросах. |
+| p50/p95, throughput и ошибки | Задержку ответов, скорость индексации и долю сбоев в воспроизводимом эксперименте. |
+
+Сравнивать следует keyword, vector, hybrid RRF и hybrid с reranker на одной версии данных, с фиксированными моделями, `top_k`, настройками, правами доступа и оборудованием. В отчёте нужны размер выборки и человеческая проверка части ответов. Текущие smoke-тесты проверяют работоспособность, а графики Grafana показывают эксплуатационные измерения; они не заменяют такую оценку.
+
+## Проверки и разработка
+
+```sh
+curl -fsS http://localhost:8000/health
+# Замените имя; curl запросит пароль интерактивно:
+curl -i -u YOUR_ADMIN_USERNAME http://localhost:8000/ready
+make smoke
+make check
+```
+
+`/health` проверяет работу API. `/ready` проверяет PostgreSQL с маркером миграции, Redis, Qdrant, MinIO и Ollama; возвращает 200 или 503. Для командной проверки поддерживается HTTP Basic с admin-значениями из `.env`; Web Admin использует JWT-пользователя. Readiness не подтверждает выполнение model inference или работу worker.
+
+`make check` запускает в Docker Ruff lint/format, strict mypy, pytest с PostgreSQL, экспорт OpenAPI, frontend-тесты, ESLint, TypeScript и сборку Vite. Обычные тесты используют подставные LLM-провайдеры. GitHub Actions выполняет проверки и отдельный `npm audit`. Результаты конкретного запуска следует фиксировать отдельно; исторические числа пройденных тестов не являются гарантией состояния текущего checkout.
+
+Полный smoke-сценарий PDF → очередь → индексация → поиск → ответ с цитатами требует работающих моделей, стека и monitoring. Он создаёт синтетические данные и очищает собственные записи и объекты:
 
 ```sh
 docker compose --profile tools run --rm --no-deps \
@@ -371,177 +284,35 @@ docker compose --profile tools run --rm --no-deps \
   uv run --frozen python scripts/smoke_processing_queue.py
 ```
 
-Он проверяет два успешных PDF без пересечения времени обработки, permanent failure
-повреждённого PDF, чтение извлечённого текста, heartbeat, scrape Prometheus и
-авторизованный Grafana dashboard. Для отдельных Grafana credentials передайте
-`-e GRAFANA_ADMIN_USER -e GRAFANA_ADMIN_PASSWORD` из окружения оболочки.
+При отдельных Grafana credentials передайте их из окружения оболочки флагами `-e GRAFANA_ADMIN_USER -e GRAFANA_ADMIN_PASSWORD`. Smoke также проверяет повторяемые сценарии отказов и мониторинг; это не нагрузочный тест.
 
-## Чанкинг и эмбеддинги
+## Обновление и диагностика
 
-Очередь PDF теперь выполняет весь ingestion до векторного индекса: извлечение →
-чанкинг → локальные эмбеддинги → PostgreSQL/Qdrant. Worker остаётся один.
-Настройки в `.env` (defaults также передаются Compose):
-
-```dotenv
-EMBEDDING_MODEL=embeddinggemma:latest
-EMBEDDING_DIMENSIONS=768
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=150
-EMBEDDING_BATCH_SIZE=8
-MAX_DOCUMENT_CHUNKS=2000
-```
-
-Окна задаются в Unicode-символах, не токенах, отдельно по страницам.
-Для этой конфигурации требуется локальная Ollama с установленной embeddinggemma:
+Применение изменений кода и схемы:
 
 ```sh
-# Выполняется на хосте с существующей установкой Ollama, если модели ещё нет:
-ollama pull embeddinggemma:latest
-docker compose build api
 make migrate
-docker compose --profile monitoring up -d --build api worker web-admin queue-metrics prometheus grafana
+docker compose up -d --build
 ```
 
-API /index показывает status, chunk_count, embedding_model/digest и dimensions.
-После смены параметров или для старого PDF нажмите «Переиндексировать» в Documents
-либо вызовите POST /documents/DOCUMENT_UUID/reindex с JWT. Новые PDF индексируются
-автоматически. Обычный /process не перестраивает уже успешную задачу.
-Несовпадение размерности не усекается автоматически и завершает обработку ошибкой.
-
-SQL хранит текст и метаданные чанков, Qdrant — векторы и ACL-метаданные.
-Модельный digest разделяет коллекции, обновление индекса не даёт дублей.
-Grafana дополнена indexed documents/chunks; это фактические текущие gauges.
-Индексирование ещё не означает наличие API ответов: поиск и генерация подключены отдельно через RAG Playground. Качество и производительность модели не оценивались.
-CPU/RAM зависят от локальной модели; текущий ориентир проекта — 16 GB RAM и 20 GB
-диска, это не измеренный минимум для любых документов. Учитывайте дополнительные
-объёмы текста, векторов и Prometheus. Большие документы ограничены 480 секундами
-на попытку и MAX_DOCUMENT_CHUNKS; при ошибке уменьшите ввод/параметры и повторите.
-
-Подробности и ограничения: [ADR 0012](docs/adr/0012-chunking-embeddings.md).
-
-## Поиск и генерация ответов
-
-Откройте **http://localhost:3000/rag**: выберите семью, вопрос и режим keyword/vector/hybrid.
-«Только поиск» показывает разрешённые фрагменты без chat-вызова; «Получить ответ»
-добавляет локальную генерацию с проверяемыми цитатами, scores, timings и trace ID.
-Вход member разрешает RAG-чтение своих доступных документов; сервер проверяет ACL.
+Если запуск не завершился, сначала смотрите состояние и логи:
 
 ```sh
-# Локальные модели устанавливаются явно, если ещё отсутствуют:
-ollama pull embeddinggemma:latest
-ollama pull qwen3:4b
-docker compose build api
-docker compose up -d --build api web-admin
+docker compose ps -a
+docker compose logs --tail=100 minio migrate api worker
+docker compose exec worker celery -A app.infrastructure.queue.tasks:celery_app inspect ping
 ```
 
-Новых миграций/зависимостей для RAG-чтения нет. Новые API — POST /rag/ask и
-POST /rag/search. В .env RAG_MIN_VECTOR_SCORE=0.35 задаёт исходный cosine threshold,
-который ещё не калиброван на golden dataset. Keyword/vector — отдельные baselines; hybrid объединяет их через RRF.
-При неиндексированном/несовместимом документе выполните reindex в Documents.
-
-Модель получает только разрешённые выдержки; неподтверждённый или некорректно
-цитированный ответ заменяется отказом. Сверяйте содержание с источниками: корректные
-номера ссылок не гарантируют faithfulness. Retrieval/answer quality пока не измерялись.
-Запросы и документы не записываются в telemetry. Streaming и LangGraph — следующие
-срезы после базовой оценки.
-
-[API и примеры](docs/api/rag.md), [Advanced RAG: архитектура и ограничения](docs/architecture/advanced-rag.md).
-Расширенный scripts/smoke_processing_queue.py теперь также проверяет три retrieval
-режима, реальный локальный chat, цитаты и deterministic no-evidence abstention;
-нужны API, Web Admin, worker, Ollama, Qdrant и monitoring. Обычные pytest работают с fake LLM.
-
-
-Upload access includes `member`: any authenticated user may upload to an accessible
-family and process/reindex their own document. Family/user management permissions
-and private/cross-family isolation are unchanged. See [ADR 0014](docs/adr/0014-member-document-upload.md).
-
-Повторная загрузка одинаковых байтов одним пользователем запрещена (HTTP 409),
-даже с другим именем, семьёй или новым ключом. Повтор запроса с прежним ключом
-сохраняет идемпотентность; другой пользователь может загрузить тот же файл.
-После обновления примените миграцию 0010 через `make migrate`.
-[Правила дедупликации](docs/adr/0015-document-content-deduplication.md).
-
-Web Admin поддерживает множественный выбор и пакетную загрузку документов.
-Общий размер пакета может превышать 10 MiB, лимит каждого файла — 10 MiB.
-Файлы передаются последовательно с индивидуальными результатами и повтором только
-неуспешных загрузок. [Описание и smoke-проверка](docs/api/document-upload.md#несколько-файлов-и-пакет-больше-10-mib).
-
-В `/rag` источники сгруппированы по документам, фрагменты и технические сведения
-раскрываются по нажатию. Оригинал можно скачать из карточки источника; API повторно
-проверяет JWT, семейный доступ и видимость документа.
-[Решение и проверки](docs/adr/0017-rag-results-download.md).
-
-Метаданные документов включают `title` из первой содержательной строки расшифровки.
-После обновления примените миграцию 0011 (`make migrate`). Старые записи заполнят
-заголовок при просмотре текста или переиндексации; до этого UI использует имя файла.
-[Правила извлечения](docs/adr/0018-transcript-document-title.md).
-
-## Web Admin: доменные модули и lint
-
-Frontend разделён на `modules/documents`, `identity`, `families`, `rag`, `operations`.
-Правила документов — в domain, пакетная загрузка с портами — в application,
-HTTP/browser adapters — в infrastructure, Vue/Pinia — в presentation.
-ESLint проверяет TypeScript/Vue и границы импортов. Подробнее:
-[ADR 0019](docs/adr/0019-web-admin-ddd-lint.md).
-
-`npm run build` обязательно выполняет lint через `prebuild`, затем `vue-tsc` и Vite;
-это действует в Docker и CI. Отдельные проверки без host Node:
+Если API не видит Ollama, проверьте доступ из контейнера:
 
 ```sh
-docker compose --profile tools run --build --rm --no-deps web-checks npm run lint
-docker compose --profile tools run --rm --no-deps web-checks npm test
+docker compose run --rm --no-deps api python -c 'import os,httpx; r=httpx.get(os.environ["OLLAMA_URL"]+"/api/tags",timeout=5); r.raise_for_status(); print(r.json())'
 ```
 
-Для локального редактирования есть `npm run lint:fix`; сборка сама файлы не исправляет.
+На macOS используется `host.docker.internal`, на Linux Compose добавляет `host-gateway`. Ollama должна принимать подключения из Docker. Если привязки к loopback недостаточно, настройте адрес прослушивания; для вручную запускаемого сервера — `OLLAMA_HOST=0.0.0.0:11434 ollama serve` после остановки прежнего процесса. Ограничьте входящие соединения firewall: у Ollama нет прикладной аутентификации.
 
-Проверка известных уязвимостей Web Admin (включая devDependencies) выполняется
-отдельно от build и требует доступа к npm registry:
+Ошибка `Can't locate revision` при наличии файла миграции может означать устаревший образ: пересоберите `migrate` через `make migrate`. Ошибки сборки MinIO проверяйте до запуска smoke. Удаление томов и сброс версии Alembic не являются способом исправления старого образа.
 
-```sh
-docker compose --profile tools run --build --rm --no-deps web-checks npm run audit
-```
+Пароли пользователей меняются через управление пользователями: редактирование `.env` не обновляет существующие записи PostgreSQL или Grafana. Учётные данные HTTP Basic для `/ready` меняются отдельно через `.env` и пересоздание контейнеров. Для PostgreSQL/MinIO с существующими томами нужна процедура смены учётных данных соответствующего сервиса.
 
-CI запускает этот audit после основных проверок и отклоняет найденные уязвимости
-начиная с low. Версии и обоснование обновления:
-[ADR 0020](docs/adr/0020-web-dependency-security-update.md).
-
-RAG latency/throughput: Grafana http://localhost:3001/d/rag-performance (папка RAG).
-Показаны p50/p95 поиска и этапов, частота запросов, ошибки, abstention и ожидание
-слота. Prometheus собирает агрегаты с API `/internal/metrics`; SPA proxy закрывает
-этот endpoint. Настройки monitoring и значения histogram требуют реальных запросов
-и нескольких scrapes. [Семантика метрик](docs/adr/0021-rag-stage-prometheus-metrics.md).
-
-Query Rewriting for empty `/rag/ask` retrieval is enabled by
-`RAG_QUERY_REWRITING=true`; set it to `false` for the baseline. One rewrite attempt
-(maximum 10 seconds) retries the same retrieval mode with fresh ACL scopes.
-Answers use the original question; `/rag/search` stays model-free.
-See [ADR 0022](docs/adr/0022-query-rewriting.md) for limits and telemetry.
-
-Advanced RAG: choose Hybrid in the Playground (UI default), or send
-`retrieval_mode: "hybrid"` to `/rag/ask` or `/rag/search`. API default remains vector.
-FTS/vector baselines remain selectable. Hybrid uses RRF (k=60); `/rag/ask` may
-rerank authorized candidates with the configured Ollama chat model. Set
-`RAG_RERANKING=false` to compare RRF alone. `/rag/search` never invokes the chat
-model. This is an LLM reranker, not a cross-encoder; quality gains are not measured.
-See [ADR 0023](docs/adr/0023-advanced-rag.md) for ACL, scoring and failure behavior.
-
-### Время этапов RAG
-
-В RAG Playground после поиска или ответа доступна таблица «Время этапов RAG»:
-ожидание слота, embedding, keyword/vector search, RRF, rewrite/retry, reranking,
-контекст, проверки доступа, генерация и проверка цитат. Показываются только
-выполненные этапы; общие интервалы включают вложенные и не складываются между собой.
-При серверной ошибке или таймауте доступны частичные измерения и Trace ID.
-Сетевой сбой может помешать получить диагностику. Формат API и границы измерений:
-[docs/api/rag.md](docs/api/rag.md#длительность-этапов-в-playground).
-
-Playground получает этапы и длительности через SSE во время выполнения запроса.
-Кнопка «Остановить» закрывает поток; итоговый ответ приходит после проверки цитат
-и доступа. Обычные JSON endpoints продолжают работать. Контракт SSE и ограничения:
-[ADR 0024](docs/adr/0024-rag-sse.md).
-
-В Playground рядом со временем этапов показаны **«Токены LLM»**: вход/выход,
-итог и разбивка по generation/rewrite/reranking. Это счётчики провайдера,
-обновляемые после каждого chat-вызова; неизвестные значения показаны как
-«Нет данных». При «Только поиск» chat-токены равны нулю. Агрегаты доступны в
-Prometheus как `rag_llm_tokens_total`. [Контракт и ограничения](docs/api/rag.md#токены-llm).
+Текущая конфигурация предназначена для локальной работы. JWT хранится в `localStorage`; перед внешним развёртыванием нужны отдельная проверка защиты сессий, TLS и сетевых границ. Проект пока не подтверждает готовность к промышленной эксплуатации.

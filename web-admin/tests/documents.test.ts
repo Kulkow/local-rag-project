@@ -70,7 +70,7 @@ it('extracts PDF text and renders document contents as plain text', async () => 
 });
 it('shows extraction failures without presenting the document as indexed', async () => {
  vi.mocked(api.listDocuments).mockResolvedValue([{ id: 'doc', filename: 'scan.pdf', family_id: 'family-id', owner_id: 'owner', status: 'uploaded', visibility: 'family', size_bytes: 10, checksum: 'hash', content_type: 'application/pdf', error_code: null, created_at: null }]);
- vi.mocked(api.enqueueDocument).mockRejectedValue(new Error('pdf_needs_ocr'));
+ vi.mocked(api.enqueueDocument).mockRejectedValue(new Error('ocr_timeout'));
  const view = mountPage(); await flushPromises();
  await view.findAll('button').find(b => b.text().includes('Переиндексировать'))!.trigger('click'); await flushPromises();
  expect(view.find('[role="alert"]').text()).toContain('OCR');
@@ -90,7 +90,7 @@ it('schedules supported uploads without waiting for extraction', async () => {
 it('keeps a saved original when queue confirmation fails', async () => {
  const view = mountPage(); await flushPromises();
  vi.mocked(api.uploadDocument).mockResolvedValue({ id: 'doc', filename: 'scan.pdf', family_id: 'family-id', owner_id: 'owner', status: 'uploaded', visibility: 'private', size_bytes: 10, checksum: 'hash', content_type: 'application/pdf', error_code: null, created_at: null });
- vi.mocked(api.enqueueDocument).mockRejectedValue(new Error('pdf_needs_ocr'));
+ vi.mocked(api.enqueueDocument).mockRejectedValue(new Error('ocr_timeout'));
  await chooseFile(view, new File(['%PDF-1.4'], 'scan.pdf', { type: 'application/pdf' }));
  await view.find('form').trigger('submit'); await flushPromises();
  expect(view.find('[role="alert"]').text()).toContain('OCR');

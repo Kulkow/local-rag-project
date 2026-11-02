@@ -1,5 +1,10 @@
 FROM ghcr.io/astral-sh/uv:0.6.3 AS uv
-FROM python:3.12.8-slim AS builder
+FROM python:3.12.8-slim AS base
+# Poppler rasterizes PDF pages; Tesseract performs local Russian/English OCR.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    poppler-utils tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+FROM base AS builder
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -11,7 +16,7 @@ RUN uv sync --frozen
 COPY . .
 ENV PYTHONPATH=/app/src
 CMD ["sh", "-c", "uv run --frozen ruff check . && uv run --frozen ruff format --check . && uv run --frozen mypy src && uv run --frozen pytest"]
-FROM python:3.12.8-slim AS runtime
+FROM base AS runtime
 RUN useradd --create-home app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

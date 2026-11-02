@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import replace
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 import os
 from uuid import uuid4
 
@@ -482,7 +482,10 @@ async def test_live_minio_original_storage() -> None:
         await storage.close()
 
 
-async def test_live_upload_api_persists_the_original_in_minio() -> None:
+@pytest.mark.parametrize("scanned", [False, True])
+async def test_live_upload_api_persists_the_original_in_minio(
+    scanned: bool, rasterize_pdf: Callable[[bytes], bytes]
+) -> None:
     from uuid import NAMESPACE_URL, uuid5
 
     url = os.getenv("TEST_DATABASE_URL")
@@ -514,7 +517,7 @@ async def test_live_upload_api_persists_the_original_in_minio() -> None:
     writer.add_blank_page(width=612, height=792)
     buffer = BytesIO()
     writer.write(buffer)
-    content = buffer.getvalue()
+    content = rasterize_pdf(buffer.getvalue()) if scanned else buffer.getvalue()
     artifact_key = None
     engine = create_async_engine(url)
     try:

@@ -15,7 +15,7 @@ const capabilityWarning = ref('');
 const jobs = ref<Record<string, ProcessingJob | null>>({});
 const indexes = ref<Record<string, DocumentIndex | null>>({});
 const formats = ref<string[]>([]); const preview = ref<ExtractedPages | null>(null); const previewId = ref(''); const previewOffset = ref(0);
-const extractionErrors: Record<string, string> = { pdf_needs_ocr: 'В PDF нет доступного текста. Требуется OCR, который пока не подключён.', pdf_encrypted: 'PDF защищён паролем. Загрузите незашифрованную копию.', pdf_invalid: 'Не удалось разобрать PDF. Проверьте файл.', pdf_page_limit: 'PDF превышает ограничение в 200 страниц.', pdf_resource_limit: 'PDF превышает лимит ресурсов обработки.', pdf_timeout: 'Превышено время обработки PDF.', text_limit: 'Извлечённый текст превышает 2 MiB.' };
+const extractionErrors: Record<string, string> = { pdf_needs_ocr: 'Этот PDF ранее требовал OCR. Повторите обработку.', no_text: 'Текст не найден даже после OCR. Проверьте качество скана.', ocr_unavailable: 'Tesseract или Poppler недоступен. Пересоберите API и worker.', ocr_failed: 'Не удалось распознать изображение в PDF.', ocr_timeout: 'Превышено время OCR страницы. Разделите документ или уменьшите изображения.', pdf_encrypted: 'PDF защищён паролем. Загрузите незашифрованную копию.', pdf_invalid: 'Не удалось разобрать PDF. Проверьте файл.', pdf_page_limit: 'PDF превышает ограничение в 200 страниц.', pdf_resource_limit: 'PDF превышает лимит ресурсов обработки.', pdf_timeout: 'Превышено время обработки PDF.', text_limit: 'Извлечённый текст превышает 2 MiB.' };
 const previewVisible = ref(false); const previewLoading = ref(false); const previewError = ref('');
 let previewRequest = 0;
 async function showPages(id: string, pageOffset = 0) {

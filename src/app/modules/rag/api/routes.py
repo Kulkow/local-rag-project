@@ -12,6 +12,7 @@ from app.api.document_dependencies import document_actor
 from app.modules.documents.infrastructure.embedding_provider import OllamaEmbeddings
 from app.modules.identity.application.contracts import Principal
 from app.modules.rag.application.answering import AnswerQuestion
+from app.modules.rag.infrastructure.prompt_repository import SqlPromptStore
 from app.modules.rag.infrastructure.evidence_repository import SqlEvidenceRepository
 from app.modules.rag.infrastructure.providers import (
     OllamaChat,
@@ -80,7 +81,12 @@ async def answering_use_case(request: Request) -> AsyncGenerator[AnswerQuestion,
                 client, config.ollama_url, config.embedding_model, config.embedding_dimensions
             ),
             QdrantSearch(client, config.qdrant_url),
-            OllamaChat(client, config.ollama_url, config.chat_model),
+            OllamaChat(
+                client,
+                config.ollama_url,
+                config.chat_model,
+                prompts=SqlPromptStore(request.app.state.db_session_factory),
+            ),
             min_score=config.rag_min_vector_score,
             observer=request.app.state.rag_metrics,
             reranker=OllamaReranker(client, config.ollama_url, config.chat_model)

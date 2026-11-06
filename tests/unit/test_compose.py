@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ComposePackagingTests(unittest.TestCase):
     def test_migrations_build_current_sources_before_dependents_start(self) -> None:
         environment = dict(os.environ)
+        environment["WEB_BIND_ADDRESS"] = "0.0.0.0"
         environment.update(
             {
                 "POSTGRES_PASSWORD": "configuration-test-only",
@@ -49,6 +50,7 @@ class ComposePackagingTests(unittest.TestCase):
 
     def test_minio_build_preserves_storage_and_health_dependency(self) -> None:
         environment = dict(os.environ)
+        environment["WEB_BIND_ADDRESS"] = "0.0.0.0"
         environment.update(
             {
                 "POSTGRES_PASSWORD": "configuration-test-only",
@@ -77,6 +79,7 @@ class ComposePackagingTests(unittest.TestCase):
 
     def test_single_consumer_and_private_monitoring(self) -> None:
         environment = dict(os.environ)
+        environment["WEB_BIND_ADDRESS"] = "0.0.0.0"
         environment.update(
             {
                 "POSTGRES_PASSWORD": "configuration-test-only",
@@ -96,6 +99,12 @@ class ComposePackagingTests(unittest.TestCase):
             text=True,
         )
         services = json.loads(result.stdout)["services"]
+        web_port = services["web-admin"]["ports"][0]
+        self.assertEqual(web_port["host_ip"], "0.0.0.0")
+        self.assertEqual(str(web_port["published"]), "3000")
+        self.assertEqual(services["api"]["ports"][0]["host_ip"], "127.0.0.1")
+        for service in ("postgres", "redis", "qdrant"):
+            self.assertFalse(services[service].get("ports"))
         worker_command = services["worker"]["command"]
         self.assertIn("--concurrency=1", worker_command)
         self.assertIn("--beat", worker_command)

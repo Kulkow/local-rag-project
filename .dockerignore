@@ -3,6 +3,8 @@
 .venv
 **/node_modules
 **/dist
+# Android sources and build artifacts are not part of the Python image.
+mobile/
 **/__pycache__
 .pytest_cache
 .mypy_cache

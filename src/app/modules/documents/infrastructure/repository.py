@@ -4,7 +4,12 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.documents.domain.entities import Document, DocumentStatus, Visibility
+from app.modules.documents.domain.entities import (
+    Document,
+    DocumentStatus,
+    Visibility,
+    PROCESSABLE_MEDIA_TYPES,
+)
 from app.modules.documents.infrastructure.processing_repository import schedule_job
 from app.modules.identity.application.contracts import Principal
 from app.modules.shared.domain.errors import ApplicationError
@@ -160,7 +165,7 @@ class SqlDocumentRepository:
             if row is None:
                 raise ApplicationError("conflict", "Upload is no longer in progress")
             result = to_document(row)
-            if result.content_type == "application/pdf":
+            if result.content_type in PROCESSABLE_MEDIA_TYPES:
                 await schedule_job(session, result.id, result.owner_id)
         return result
 

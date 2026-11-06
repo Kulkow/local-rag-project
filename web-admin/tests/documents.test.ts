@@ -29,6 +29,18 @@ function mountPage(role: 'admin' | 'manager' | 'member' = 'admin') {
 async function chooseFile(view: ReturnType<typeof mount>, file: File) {
  const input = view.find('input[type="file"]'); Object.defineProperty(input.element, 'files', { value: [file], configurable: true }); await input.trigger('change');
 }
+it.each(['image/png', 'image/jpeg'])('uploads %s and schedules OCR for a member', async mime => {
+ vi.mocked(api.extractionFormats).mockResolvedValue(['application/pdf', 'image/png', 'image/jpeg']);
+ const view = mountPage('member'); await flushPromises();
+ const input = view.find('input[type="file"]');
+ expect(input.attributes('accept')).toContain('.png'); expect(input.attributes('accept')).toContain('.jpg'); expect(input.attributes('accept')).toContain('.jpeg');
+ const file = new File(['synthetic pixels'], mime === 'image/png' ? 'scan.png' : 'scan.jpg', { type: mime });
+ vi.mocked(api.uploadDocument).mockResolvedValue(uploadedFile(file));
+ await chooseFile(view, file); await view.find('form').trigger('submit'); await flushPromises();
+ expect(api.uploadDocument).toHaveBeenCalledWith('jwt', file, 'family-id', 'private', expect.any(String));
+ expect(api.enqueueDocument).toHaveBeenCalledWith('jwt', file.name);
+ expect(view.text()).toContain('В очереди'); expect(view.text()).toContain('Tesseract');
+});
 it('requires sign-in before requesting documents', async () => {
  wrapper = mount(Documents, { global: { plugins: [pinia, PrimeVue] } }); await flushPromises();
  expect(wrapper.text()).toContain('Вход'); expect(api.listDocuments).not.toHaveBeenCalled();
@@ -301,6 +313,16 @@ it('opens extracted text in a modal, paginates, and reports errors inside it', a
  expect(view.find('[role="dialog"] pre').text()).toBe('Last page');
  await view.findAll('button').find(button => button.text() === 'Закрыть')!.trigger('click'); await flushPromises();
  expect(view.find('pre').exists()).toBe(false);
+});
+it('explains an OCR no_text failure when opening the extracted text of an image', async () => {
+ vi.mocked(api.extractionFormats).mockResolvedValue(['image/jpeg']);
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pixels'], 'scan.jpg', { type: 'image/jpeg' })), id: 'doc' }]);
+ vi.mocked(api.processingStatus).mockResolvedValue({ document_id: 'doc', status: 'failed', attempts: 1, error_code: 'invalid', created_at: null, started_at: null, finished_at: null });
+ vi.mocked(api.readPages).mockRejectedValue(new Error('Document extraction failed: no_text'));
+ const view = mountPage(); await flushPromises();
+ await view.findAll('button').find(button => button.text() === 'Просмотреть текст')!.trigger('click'); await flushPromises();
+ expect(view.find('[role="dialog"] [role="alert"]').text()).toContain('Текст не найден даже после OCR. Проверьте качество скана.');
+ expect(view.find('[role="dialog"] pre').exists()).toBe(false);
 });
 it('ignores a text response after the popup has been closed', async () => {
  vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);

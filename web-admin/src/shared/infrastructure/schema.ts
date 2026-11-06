@@ -1447,6 +1447,8 @@ export interface operations {
                 "application/pdf": string;
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
                 "text/html": string;
+                "image/png": string;
+                "image/jpeg": string;
                 "application/octet-stream": string;
             };
         };

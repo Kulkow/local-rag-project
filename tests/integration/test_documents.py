@@ -482,9 +482,11 @@ async def test_live_minio_original_storage() -> None:
         await storage.close()
 
 
-@pytest.mark.parametrize("scanned", [False, True])
+@pytest.mark.parametrize("format", ["pdf", "scanned_pdf", "png", "jpg", "jpeg"])
 async def test_live_upload_api_persists_the_original_in_minio(
-    scanned: bool, rasterize_pdf: Callable[[bytes], bytes]
+    format: str,
+    rasterize_pdf: Callable[[bytes], bytes],
+    image_from_pdf: Callable[[bytes, str], bytes],
 ) -> None:
     from uuid import NAMESPACE_URL, uuid5
 
@@ -517,7 +519,14 @@ async def test_live_upload_api_persists_the_original_in_minio(
     writer.add_blank_page(width=612, height=792)
     buffer = BytesIO()
     writer.write(buffer)
-    content = rasterize_pdf(buffer.getvalue()) if scanned else buffer.getvalue()
+    content = buffer.getvalue()
+    image = format in ("png", "jpg", "jpeg")
+    extension = format if image else "pdf"
+    mime = ("image/png" if format == "png" else "image/jpeg") if image else "application/pdf"
+    if image:
+        content = image_from_pdf(content, format)
+    elif format == "scanned_pdf":
+        content = rasterize_pdf(content)
     artifact_key = None
     engine = create_async_engine(url)
     try:
@@ -541,10 +550,10 @@ async def test_live_upload_api_persists_the_original_in_minio(
                     transport=httpx.ASGITransport(app=app), base_url="http://test"
                 ) as client:
                     response = await client.post(
-                        f"/documents?family_id={family_id}&filename=example.pdf&visibility=family",
+                        f"/documents?family_id={family_id}&filename=example.{extension}&visibility=family",
                         headers={
                             "Authorization": "Bearer " + JwtTokens(SECRET).issue(actor),
-                            "Content-Type": "application/pdf",
+                            "Content-Type": mime,
                             "Idempotency-Key": str(key),
                         },
                         content=content,
@@ -559,7 +568,8 @@ async def test_live_upload_api_persists_the_original_in_minio(
                     assert extracted.status_code == 200, extracted.text
                     result = extracted.json()
                     artifact_key = f"extracted/{document_id}/{result['generation']}.json"
-                    assert result["page_count"] == 2 and result["status"] == "extracted"
+                    assert result["page_count"] == (1 if image else 2)
+                    assert result["status"] == "extracted"
                     listing = await client.get(f"/documents?family_id={family_id}", headers=auth)
                     assert listing.json()[0]["title"] == "Synthetic evidence"
                     # Existing extractions backfill metadata without re-extracting the PDF.
@@ -575,10 +585,12 @@ async def test_live_upload_api_persists_the_original_in_minio(
                     assert listing.json()[0]["title"] == "Synthetic evidence"
                     pages = await client.get(f"/documents/{document_id}/pages", headers=auth)
                     assert pages.status_code == 200, pages.text
-                    assert pages.json()["pages"] == [
-                        {"page_number": 1, "text": "Synthetic evidence"},
-                        {"page_number": 2, "text": ""},
-                    ]
+                    expected_pages = [{"page_number": 1, "text": "Synthetic evidence"}]
+                    if not image:
+                        expected_pages.append({"page_number": 2, "text": ""})
+                    assert pages.json()["pages"] == expected_pages
+                    queued = await client.get(f"/documents/{document_id}/processing", headers=auth)
+                    assert queued.status_code == 200 and queued.json()["status"] == "queued"
                     assert (await client.get(f"/documents/{document_id}/pages")).status_code == 401
 
                 def read_original() -> bytes:

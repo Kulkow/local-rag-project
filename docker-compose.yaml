@@ -115,7 +115,7 @@ services:
     build: ./web-admin
     restart: unless-stopped
     mem_limit: 128m
-    ports: ['127.0.0.1:3000:8080']
+    ports: ['${WEB_BIND_ADDRESS:-0.0.0.0}:3000:8080']
     depends_on:
       api: {condition: service_healthy}
     healthcheck:

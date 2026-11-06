@@ -70,3 +70,34 @@ def rasterize_pdf(tmp_path: Path) -> Callable[[bytes], bytes]:
         return output.getvalue()
 
     return rasterize
+
+
+@pytest.fixture
+def image_from_pdf(tmp_path: Path) -> Callable[[bytes, str], bytes]:
+    """Synthetic PNG/JPEG fixtures rendered with the already installed Poppler."""
+
+    def render(content: bytes, extension: str) -> bytes:
+        source = tmp_path / "image-source.pdf"
+        source.write_bytes(content)
+        suffix = "png" if extension == "png" else "jpg"
+        subprocess.run(
+            [
+                "pdftoppm",
+                "-f",
+                "1",
+                "-l",
+                "1",
+                "-singlefile",
+                "-scale-to",
+                "1800",
+                "-png" if extension == "png" else "-jpeg",
+                str(source),
+                str(tmp_path / "image"),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=20,
+        )
+        return (tmp_path / f"image.{suffix}").read_bytes()
+
+    return render

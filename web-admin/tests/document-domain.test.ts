@@ -9,6 +9,11 @@ it('validates individual limits rather than a total batch limit', () => {
  expect(() => validateUpload({ name: 'guide.pdf', size: 0 })).toThrow();
  expect(() => validateUpload({ name: 'guide.exe', size: 10 })).toThrow('PDF');
 });
+it('accepts PNG and JPEG images with the same per-file size limit', () => {
+ for (const name of ['scan.png', 'photo.jpg', 'photo.JPEG']) expect(() => validateUpload({ name, size: 1024 })).not.toThrow();
+ expect(() => validateUpload({ name: 'scan.png', size: MAX_FILE_BYTES + 1 })).toThrow('10 MiB');
+ expect(() => validateUpload({ name: 'scan.svg', size: 1024 })).toThrow('PNG');
+});
 it('requires an actual index for readiness and exposes a failed reindex', () => {
  expect(documentState(document, { status: 'succeeded' }, null, true, true).label).toBe('Обработан');
  expect(documentState(document, { status: 'succeeded' }, { status: 'indexed' }, true, true).label).toBe('Доступен для поиска');

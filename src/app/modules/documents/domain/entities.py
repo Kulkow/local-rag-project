@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from uuid import UUID
 
 from app.modules.shared.domain.errors import ApplicationError
+from app.modules.documents.domain.images import IMAGE_MEDIA_TYPES, valid_image
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MEDIA_TYPES = {
@@ -19,7 +20,11 @@ MEDIA_TYPES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".html": "text/html",
     ".htm": "text/html",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
 }
+PROCESSABLE_MEDIA_TYPES = frozenset({"application/pdf", *IMAGE_MEDIA_TYPES})
 
 
 class Visibility(StrEnum):
@@ -90,7 +95,9 @@ def validate_file(filename: str, content_type: str, content: bytes) -> tuple[str
     expected = MEDIA_TYPES.get(extension)
     declared = content_type.split(";", 1)[0].strip().lower()
     if expected is None or declared not in (expected, "application/octet-stream"):
-        raise ApplicationError("unsupported_media", "Allowed file types: PDF, DOCX and HTML")
+        raise ApplicationError(
+            "unsupported_media", "Allowed file types: PDF, DOCX, HTML, PNG and JPEG"
+        )
     valid = False
     if extension == ".pdf":
         valid = (
@@ -107,6 +114,8 @@ def validate_file(filename: str, content_type: str, content: bytes) -> tuple[str
             valid = False
     elif extension == ".docx":
         valid = valid_docx(content)
+    elif expected in IMAGE_MEDIA_TYPES:
+        valid = valid_image(content, expected)
     if not valid:
         raise ApplicationError(
             "unsupported_media", "File content does not match a supported format"

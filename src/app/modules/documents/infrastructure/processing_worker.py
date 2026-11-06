@@ -11,7 +11,6 @@ from app.core.settings import Settings
 from app.infrastructure.db.connection import create_engine
 from app.modules.documents.application.extraction import (
     ExtractDocument,
-    ExtractorRegistry,
     ReadExtractedPages,
 )
 from app.modules.documents.application.indexing import IndexDocument
@@ -24,7 +23,7 @@ from app.modules.documents.domain.processing import ProcessingJob
 from app.modules.documents.infrastructure.extraction_repository import SqlExtractionRepository
 from app.modules.documents.infrastructure.family_access import ScopedFamilyAccess
 from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
-from app.modules.documents.infrastructure.pdf_extractor import PdfExtractor
+from app.modules.documents.infrastructure.extractors import default_extractors
 from app.modules.documents.infrastructure.processing_repository import SqlProcessingRepository
 from app.modules.identity.infrastructure.repository import SqlIdentityRepository
 from app.modules.shared.domain.errors import ApplicationError
@@ -46,7 +45,7 @@ class ExtractQueuedDocument:
         self.use_case = ExtractDocument(
             SqlExtractionRepository(factory),
             storage,
-            ExtractorRegistry([PdfExtractor()]),
+            default_extractors(),
             ScopedFamilyAccess(factory),
         )
 

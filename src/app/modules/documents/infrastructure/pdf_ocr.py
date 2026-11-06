@@ -1,4 +1,4 @@
-"""Bounded local OCR, called only inside the isolated PDF parser process."""
+"""Bounded local OCR, called only inside isolated PDF/image parser processes."""
 
 import os
 from pathlib import Path
@@ -26,6 +26,16 @@ def recognize_page(source: Path, directory: Path, page_number: int) -> str:
                 str(directory / "page"),
             ]
         )
+        return recognize_image(image, directory)
+    finally:
+        image.unlink(missing_ok=True)
+        output.with_suffix(".txt").unlink(missing_ok=True)
+
+
+def recognize_image(image: Path, directory: Path) -> str:
+    """Use the same local OCR and output limits for PDF pages and uploaded images."""
+    output = directory / "recognized"
+    try:
         _run(["tesseract", str(image), str(output), "-l", "rus+eng", "--psm", "3"])
         with output.with_suffix(".txt").open("rb") as stream:
             text = stream.read(MAX_TEXT_BYTES + 1)
@@ -35,7 +45,6 @@ def recognize_page(source: Path, directory: Path, page_number: int) -> str:
     except (OSError, UnicodeError):
         raise ExtractionFailure("ocr_failed") from None
     finally:
-        image.unlink(missing_ok=True)
         output.with_suffix(".txt").unlink(missing_ok=True)
 
 

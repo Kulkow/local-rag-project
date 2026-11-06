@@ -154,6 +154,11 @@ class ReadExtractedPages:
         document = await self.repository.get_visible(actor, document_id)
         await self.access.authorize(actor, document.family_id)
         run = await self.repository.get(document_id)
+        if run is not None and run.status == ExtractionStatus.FAILED:
+            raise ApplicationError(
+                "conflict",
+                f"Document extraction failed: {run.error_code or 'extraction_unavailable'}",
+            )
         if run is None or run.status != ExtractionStatus.EXTRACTED or not run.artifact_key:
             raise ApplicationError("conflict", "Document text has not been extracted yet")
         try:

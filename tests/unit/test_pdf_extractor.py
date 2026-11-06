@@ -11,6 +11,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 
 from app.modules.documents.infrastructure.pdf_extractor import PdfExtractor
+from app.modules.documents.infrastructure.image_extractor import ImageExtractor
 from app.modules.documents.domain.extraction import ExtractionFailure, PageText
 
 
@@ -66,8 +67,9 @@ async def test_parser_timeout_reaps_process() -> None:
 
 
 @pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("image", [False, True])
 async def test_timeout_and_cancellation_stop_descendants_and_clean_directory(
-    monkeypatch: pytest.MonkeyPatch, cancel: bool
+    monkeypatch: pytest.MonkeyPatch, cancel: bool, image: bool
 ) -> None:
     launch = asyncio.create_subprocess_exec
     started = asyncio.Event()
@@ -92,7 +94,12 @@ async def test_timeout_and_cancellation_stop_descendants_and_clean_directory(
         return process
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", slow_parser)
-    task = asyncio.create_task(PdfExtractor(timeout_seconds=0.5).extract(synthetic_pdf()))
+    extractor = (
+        ImageExtractor("image/png", timeout_seconds=0.5)
+        if image
+        else PdfExtractor(timeout_seconds=0.5)
+    )
+    task = asyncio.create_task(extractor.extract(synthetic_pdf()))
     await started.wait()
     if cancel:
         await asyncio.sleep(0.1)
@@ -100,7 +107,7 @@ async def test_timeout_and_cancellation_stop_descendants_and_clean_directory(
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, 3)
     else:
-        with pytest.raises(ExtractionFailure, match="pdf_timeout"):
+        with pytest.raises(ExtractionFailure, match="image_timeout" if image else "pdf_timeout"):
             await asyncio.wait_for(task, 3)
     assert processes[0].returncode is not None
     assert not directories[0].exists()

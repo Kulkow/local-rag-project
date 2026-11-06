@@ -7,7 +7,11 @@ from uuid import uuid4
 
 import pytest
 
-from app.modules.documents.application.extraction import ExtractDocument, ExtractorRegistry
+from app.modules.documents.application.extraction import (
+    ExtractDocument,
+    ExtractorRegistry,
+    ReadExtractedPages,
+)
 from app.modules.documents.domain.extraction import (
     ExtractedContent,
     PageText,
@@ -149,6 +153,49 @@ async def test_storage_failure_records_error_and_cleans_artifact(setup: tuple) -
     assert "sensitive" not in str(error.value)
     assert repository.run is not None and repository.run.status == ExtractionStatus.FAILED
     storage.delete.assert_awaited_once()
+
+
+@pytest.mark.parametrize("code", ["no_text", "ocr_timeout", None])
+async def test_read_failed_extraction_reports_saved_reason(setup: tuple, code: str | None) -> None:
+    _, repository, storage, access, _, actor = setup
+    reader_repository = AsyncMock()
+    reader_repository.get_visible.return_value = repository.document
+    reader_repository.get.return_value = Extraction(
+        repository.document.id, uuid4(), ExtractionStatus.FAILED, error_code=code
+    )
+    reader = ReadExtractedPages(reader_repository, storage, access)
+    with pytest.raises(ApplicationError, match=code or "extraction_unavailable") as error:
+        await reader.execute(actor, repository.document.id, 0, 5)
+    assert error.value.code == "conflict"
+    storage.get.assert_not_awaited()
+
+
+@pytest.mark.parametrize("started", [False, True])
+async def test_read_pending_extraction_keeps_not_ready_message(setup: tuple, started: bool) -> None:
+    _, repository, storage, access, _, actor = setup
+    reader_repository = AsyncMock()
+    reader_repository.get_visible.return_value = repository.document
+    reader_repository.get.return_value = (
+        Extraction(repository.document.id, uuid4(), ExtractionStatus.PROCESSING)
+        if started
+        else None
+    )
+    reader = ReadExtractedPages(reader_repository, storage, access)
+    with pytest.raises(ApplicationError, match="Document text has not been extracted yet"):
+        await reader.execute(actor, repository.document.id, 0, 5)
+    storage.get.assert_not_awaited()
+
+
+async def test_read_failure_reason_is_not_disclosed_without_access(setup: tuple) -> None:
+    _, repository, storage, access, _, actor = setup
+    reader_repository = AsyncMock()
+    reader_repository.get_visible.return_value = repository.document
+    access.authorize.side_effect = ApplicationError("not_found", "Family not found")
+    reader = ReadExtractedPages(reader_repository, storage, access)
+    with pytest.raises(ApplicationError, match="Family not found"):
+        await reader.execute(actor, repository.document.id, 0, 5)
+    reader_repository.get.assert_not_awaited()
+    storage.get.assert_not_awaited()
 
 
 def test_registry_rejects_duplicate_mime_handlers() -> None:

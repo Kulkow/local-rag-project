@@ -16,7 +16,7 @@ export interface Document {
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export function validateUpload(file: { name: string; size: number }): void {
  if (!file.size || file.size > MAX_FILE_BYTES) throw new Error('Размер файла должен быть от 1 байта до 10 MiB.');
- if (!/\.(pdf|docx|html?)$/i.test(file.name)) throw new Error('Поддерживаются PDF, DOCX и HTML.');
+ if (!/\.(pdf|docx|html?|png|jpe?g)$/i.test(file.name)) throw new Error('Поддерживаются PDF, DOCX, HTML, PNG и JPEG.');
 }
 export const uploadLabels = { uploading: 'Загрузка оригинала', uploaded: 'Оригинал сохранён', upload_failed: 'Ошибка загрузки' };
 export const jobLabels = { queued: 'В очереди', processing: 'Обработка', retry_wait: 'Ожидает повтора', succeeded: 'Обработка завершена', failed: 'Ошибка обработки' };

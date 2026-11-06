@@ -60,6 +60,8 @@ class DocumentView(BaseModel):
                     "application/pdf",
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     "text/html",
+                    "image/png",
+                    "image/jpeg",
                     "application/octet-stream",
                 )
             },
@@ -173,7 +175,7 @@ async def extract(
             await gate.acquire()
     except TimeoutError:
         raise ApplicationError(
-            "throttled", "PDF extraction capacity reached; retry later"
+            "throttled", "Text extraction capacity reached; retry later"
         ) from None
     try:
         return ExtractionView.model_validate(await use_case.execute(actor, document_id))

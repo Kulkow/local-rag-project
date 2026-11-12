@@ -14,8 +14,8 @@ from app.main import create_app
 from app.modules.documents.domain.chunking import ChunkingConfig, chunk_pages
 from app.modules.documents.domain.extraction import PageText
 from app.modules.documents.application.indexing import IndexRecord
-from app.modules.documents.infrastructure.chunk_repository import SqlChunkIndex
-from app.modules.documents.infrastructure.repository import documents
+from app.modules.documents.infrastructure.persistence.chunk_repository import SqlChunkIndex
+from app.modules.documents.infrastructure.persistence.repository import documents
 from app.modules.families.infrastructure.persistence import families, family_members, persons
 from app.modules.identity.domain.entities import Principal, User, UserRole
 from app.modules.identity.infrastructure.repository import SqlIdentityRepository, users

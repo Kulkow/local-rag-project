@@ -8,8 +8,8 @@ from app.modules.documents.application.indexing import IndexDocument
 from app.modules.documents.domain.chunking import ChunkingConfig
 from app.modules.documents.domain.entities import Document, DocumentStatus, Visibility
 from app.modules.documents.domain.extraction import Extraction, ExtractionStatus, PageText
-from app.modules.documents.infrastructure.embedding_provider import OllamaEmbeddings
-from app.modules.documents.infrastructure.vector_index import QdrantIndex
+from app.modules.documents.infrastructure.indexing.embedding_provider import OllamaEmbeddings
+from app.modules.documents.infrastructure.indexing.vector_index import QdrantIndex
 from app.modules.shared.domain.errors import ApplicationError
 
 

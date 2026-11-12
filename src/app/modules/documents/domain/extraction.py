@@ -39,6 +39,8 @@ class PageText:
 @dataclass(frozen=True)
 class ExtractedContent:
     pages: tuple[PageText, ...]
+    ocr_engine: str | None = None
+    ocr_fallback_reason: str | None = None
 
     def __post_init__(self) -> None:
         if not self.pages or len(self.pages) > MAX_PDF_PAGES:

@@ -4,7 +4,7 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
-from app.modules.documents.infrastructure.pdf_images import page_has_images
+from app.modules.documents.infrastructure.extraction.pdf.pdf_images import page_has_images
 
 
 @pytest.mark.parametrize("nested", [False, True])

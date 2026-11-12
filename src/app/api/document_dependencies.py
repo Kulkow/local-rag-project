@@ -10,15 +10,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.dependencies import bearer, identity_service
 from app.modules.documents.application.indexing import InspectIndex
-from app.modules.documents.infrastructure.chunk_repository import SqlChunkIndex
+from app.modules.documents.infrastructure.persistence.chunk_repository import SqlChunkIndex
 from app.modules.documents.application.processing import ManageProcessing
-from app.modules.documents.infrastructure.processing_repository import SqlProcessingRepository
+from app.modules.documents.infrastructure.persistence.processing_repository import (
+    SqlProcessingRepository,
+)
 from app.modules.documents.application.upload import ListDocuments, UploadDocument
 from app.modules.documents.application.extraction import ExtractDocument, ReadExtractedPages
-from app.modules.documents.infrastructure.extraction_repository import SqlExtractionRepository
-from app.modules.documents.infrastructure.repository import SqlDocumentRepository
-from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
-from app.modules.documents.infrastructure.family_access import (
+from app.modules.documents.infrastructure.persistence.extraction_repository import (
+    SqlExtractionRepository,
+)
+from app.modules.documents.infrastructure.persistence.repository import SqlDocumentRepository
+from app.modules.documents.infrastructure.storage.object_storage import MinioOriginalStorage
+from app.modules.documents.infrastructure.access.family_access import (
     ScopedFamilyAccess as ScopedFamilyAccess,
 )
 from app.modules.identity.application.contracts import Principal

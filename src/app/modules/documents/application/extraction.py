@@ -107,6 +107,8 @@ class ExtractDocument:
                     "generation": str(run.generation),
                     "source_checksum": document.checksum,
                     "extractor": extractor.name,
+                    "ocr_engine": content.ocr_engine,
+                    "ocr_fallback_reason": content.ocr_fallback_reason,
                     "pages": [
                         {"page_number": page.page_number, "text": page.text}
                         for page in content.pages

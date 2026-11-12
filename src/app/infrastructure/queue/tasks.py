@@ -37,7 +37,7 @@ celery_app.conf.update(
 @celery_app.task(name="documents.process_next", soft_time_limit=510, time_limit=540)  # type: ignore[misc]
 def process_next_document() -> None:
     import asyncio
-    from app.modules.documents.infrastructure.processing_worker import process_tick
+    from app.modules.documents.infrastructure.processing.processing_worker import process_tick
 
     with asyncio.Runner() as runner:
         runner.run(process_tick(settings))

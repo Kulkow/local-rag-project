@@ -35,6 +35,12 @@ class IsolatedExtractor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
+            env={
+                **os.environ,
+                "OPENBLAS_NUM_THREADS": "1",
+                "OMP_NUM_THREADS": "1",
+                "MKL_NUM_THREADS": "1",
+            },
         )
         try:
             async with asyncio.timeout(self.timeout_seconds):
@@ -70,7 +76,9 @@ class IsolatedExtractor:
                     else f"{self.error_prefix}_invalid"
                 )
             return ExtractedContent(
-                tuple(PageText(page["page_number"], page["text"]) for page in payload["pages"])
+                tuple(PageText(page["page_number"], page["text"]) for page in payload["pages"]),
+                ocr_engine=payload.get("ocr_engine"),
+                ocr_fallback_reason=payload.get("ocr_fallback_reason"),
             )
         except (ValueError, TypeError, KeyError):
             raise ExtractionFailure(f"{self.error_prefix}_invalid") from None

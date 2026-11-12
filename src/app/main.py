@@ -23,8 +23,8 @@ from app.modules.documents.api.routes import router as documents_router
 from app.modules.rag.api.routes import router as rag_router
 from app.modules.rag.api.streaming import router as rag_stream_router
 from app.modules.rag.api.settings import router as rag_settings_router
-from app.modules.documents.infrastructure.extractors import default_extractors
-from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
+from app.modules.documents.infrastructure.extraction.extractors import default_extractors
+from app.modules.documents.infrastructure.storage.object_storage import MinioOriginalStorage
 from app.observability.rag_metrics import PrometheusRagObserver
 from app.core.settings import Settings
 from app.infrastructure.db.connection import create_engine

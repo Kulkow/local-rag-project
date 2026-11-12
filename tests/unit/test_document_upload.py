@@ -234,3 +234,36 @@ async def test_member_upload_requires_family_access_not_management(setup: tuple)
     access.authorize.assert_awaited_once_with(member, family_id, write=False)
     assert document.owner_id == member.id
     storage.put.assert_awaited_once()
+
+
+async def test_upload_preserves_trimmed_description(setup: tuple) -> None:
+    use_case, _, _, _, actor = setup
+    result = await use_case.execute(
+        actor,
+        uuid4(),
+        "guide.pdf",
+        "application/pdf",
+        PDF,
+        uuid4(),
+        Visibility.PRIVATE,
+        description="  Описание снимка\nСтраница 1  ",
+    )
+    assert result.description == "Описание снимка\nСтраница 1"
+
+
+@pytest.mark.parametrize("description", ["x" * 2001, "bad\x00text"])
+async def test_upload_rejects_invalid_description(setup: tuple, description: str) -> None:
+    use_case, repository, storage, _, actor = setup
+    with pytest.raises(ApplicationError):
+        await use_case.execute(
+            actor,
+            uuid4(),
+            "guide.pdf",
+            "application/pdf",
+            PDF,
+            uuid4(),
+            Visibility.PRIVATE,
+            description=description,
+        )
+    assert not repository.documents
+    storage.put.assert_not_called()

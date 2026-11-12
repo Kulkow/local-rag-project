@@ -53,6 +53,7 @@ class Document:
     error_code: str | None = None
     created_at: datetime | None = None
     title: str | None = None
+    description: str | None = None
 
     def complete_upload(self) -> "Document":
         self._require_uploading()

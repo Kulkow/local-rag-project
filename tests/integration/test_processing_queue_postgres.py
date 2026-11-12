@@ -8,7 +8,10 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.modules.documents.domain.processing import ProcessingStatus
-from app.modules.documents.infrastructure.processing_repository import SqlProcessingRepository, jobs
+from app.modules.documents.infrastructure.persistence.processing_repository import (
+    SqlProcessingRepository,
+    jobs,
+)
 
 
 async def test_durable_queue_retry_recovery_and_generation_fencing() -> None:

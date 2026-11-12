@@ -32,11 +32,15 @@ def recognize_page(source: Path, directory: Path, page_number: int) -> str:
         output.with_suffix(".txt").unlink(missing_ok=True)
 
 
-def recognize_image(image: Path, directory: Path) -> str:
+def recognize_image(image: Path, directory: Path, *, photo: bool = False) -> str:
     """Use the same local OCR and output limits for PDF pages and uploaded images."""
     output = directory / "recognized"
     try:
-        _run(["tesseract", str(image), str(output), "-l", "rus+eng", "--psm", "3"])
+        command = ["tesseract", str(image), str(output), "-l", "rus+eng", "--psm", "3"]
+        if photo:
+            # Sauvola local binarization handles uneven lighting better than global Otsu.
+            command.extend(["--dpi", "300", "-c", "thresholding_method=2"])
+        _run(command)
         with output.with_suffix(".txt").open("rb") as stream:
             text = stream.read(MAX_TEXT_BYTES + 1)
         if len(text) > MAX_TEXT_BYTES:

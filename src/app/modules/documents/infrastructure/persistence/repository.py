@@ -10,7 +10,7 @@ from app.modules.documents.domain.entities import (
     Visibility,
     PROCESSABLE_MEDIA_TYPES,
 )
-from app.modules.documents.infrastructure.processing_repository import schedule_job
+from app.modules.documents.infrastructure.persistence.processing_repository import schedule_job
 from app.modules.identity.application.contracts import Principal
 from app.modules.shared.domain.errors import ApplicationError
 
@@ -23,6 +23,7 @@ documents = sa.Table(
     sa.Column("owner_id", sa.Uuid()),
     sa.Column("filename", sa.String(255)),
     sa.Column("title", sa.String(255)),
+    sa.Column("description", sa.String(2000)),
     sa.Column("content_type", sa.String(100)),
     sa.Column("size_bytes", sa.Integer()),
     sa.Column("checksum", sa.String(64)),
@@ -49,6 +50,7 @@ def to_document(row: sa.RowMapping) -> Document:
         row["error_code"],
         row["created_at"],
         row["title"],
+        row["description"],
     )
 
 
@@ -89,6 +91,7 @@ class SqlDocumentRepository:
                         family_id=document.family_id,
                         owner_id=document.owner_id,
                         filename=document.filename,
+                        description=document.description,
                         content_type=document.content_type,
                         size_bytes=document.size_bytes,
                         checksum=document.checksum,
@@ -119,6 +122,7 @@ class SqlDocumentRepository:
                 existing.content_type,
                 existing.checksum,
                 existing.visibility,
+                existing.description,
             ) != (
                 document.family_id,
                 document.owner_id,
@@ -126,6 +130,7 @@ class SqlDocumentRepository:
                 document.content_type,
                 document.checksum,
                 document.visibility,
+                document.description,
             ):
                 raise ApplicationError(
                     "conflict", "Upload key is already used for another file or access scope"

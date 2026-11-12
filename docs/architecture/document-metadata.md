@@ -216,10 +216,35 @@ HTTP-контракты определены в [routes.py](../../src/app/module
 - [domain/extraction.py](../../src/app/modules/documents/domain/extraction.py): Extraction, страницы и лимиты текста.
 - [application/upload.py](../../src/app/modules/documents/application/upload.py): загрузка, идемпотентность и порты.
 - [application/extraction.py](../../src/app/modules/documents/application/extraction.py): извлечение и чтение артефакта.
-- [infrastructure/repository.py](../../src/app/modules/documents/infrastructure/repository.py): SQL документов.
-- [infrastructure/extraction_repository.py](../../src/app/modules/documents/infrastructure/extraction_repository.py): claim, lease и generation.
+- [infrastructure/persistence/repository.py](../../src/app/modules/documents/infrastructure/persistence/repository.py): SQL документов.
+- [infrastructure/persistence/extraction_repository.py](../../src/app/modules/documents/infrastructure/persistence/extraction_repository.py): claim, lease и generation.
 - [ADR 0008](../adr/0008-document-upload.md): решения по загрузке и компенсации.
 - [ADR 0009](../adr/0009-upload-preparation.md): автоматический запуск подготовки из формы.
+
+## Группировка infrastructure
+
+Инфраструктурные адаптеры документов сгруппированы по назначению:
+
+```text
+src/app/modules/documents/infrastructure/
+  access/                   # Проверка доступа через модуль семей
+  persistence/              # PostgreSQL: документы, извлечение, чанки, очередь
+  storage/                  # Оригиналы и артефакты в MinIO/S3
+  indexing/                 # Ollama embeddings и Qdrant
+  processing/               # Композиция фонового обработчика очереди
+  extraction/
+    extractors.py           # Реестр поддерживаемых форматов
+    isolated_extractor.py   # Жизненный цикл изолированных процессов
+    pdf/                    # PDF extractor, разбор страниц и дочерний процесс
+    images/                 # PNG/JPEG extractor, OpenCV и дочерний процесс
+    ocr/                    # PaddleOCR, Tesseract, fallback и инициализация моделей
+```
+
+Импорты используют полные пути к конкретным модулям. `__init__.py` обозначают
+пакеты и не выполняют неявную регистрацию или реэкспорт старых путей.
+Строковые пути Python subprocess, monkeypatch targets, Celery-композиция и команда
+инициализации OCR в Compose используют ту же структуру. SQL-схема, HTTP API,
+порядок OCR-этапов и формат артефактов не меняются.
 
 ## Доменные операции и адаптеры
 

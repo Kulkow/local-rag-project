@@ -12,8 +12,8 @@
 modules/documents/
   domain/entities.py           # Document, Visibility, DocumentStatus, file policy
   application/upload.py        # UploadDocument, ListDocuments, repository/storage/access ports
-  infrastructure/repository.py     # PostgreSQL, короткие самостоятельные транзакции
-  infrastructure/object_storage.py # MinIO/S3, SDK в потоках
+  infrastructure/persistence/repository.py # PostgreSQL, короткие самостоятельные транзакции
+  infrastructure/storage/object_storage.py # MinIO/S3, SDK в потоках
   api/routes.py               # ограниченное чтение тела, HTTP DTO и статусы
 api/document_dependencies.py  # composition, публичный FamilyService, короткие DB read scopes
 web-admin/src/views/Documents.vue # загрузка, ACL, список, ошибки, пагинация

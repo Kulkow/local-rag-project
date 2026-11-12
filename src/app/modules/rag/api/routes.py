@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.api.document_dependencies import document_actor
-from app.modules.documents.infrastructure.embedding_provider import OllamaEmbeddings
+from app.modules.documents.infrastructure.indexing.embedding_provider import OllamaEmbeddings
 from app.modules.identity.application.contracts import Principal
 from app.modules.rag.application.answering import AnswerQuestion
 from app.modules.rag.infrastructure.prompt_repository import SqlPromptStore

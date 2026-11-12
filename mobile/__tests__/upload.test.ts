@@ -68,3 +68,11 @@ it('surfaces denied uploads without requesting processing', async () => {
   await expect(sendDraft(api as unknown as Api, {file: photo, family: 'other-family', visibility: 'private'}, () => true)).rejects.toThrow('Недостаточно прав');
   expect(api.process).not.toHaveBeenCalled();
 });
+
+it('encodes a private description in a header rather than the URL', async () => {
+  const binary = jest.fn().mockResolvedValue({status: 201, data: JSON.stringify(saved)});
+  const api = new Api('https://example.test/api', 'jwt', jest.fn(), binary);
+  await api.upload(photo, 'family', 'private', ' Счёт за воду ');
+  expect(binary.mock.calls[0][1]['X-Document-Description']).toBe(encodeURIComponent('Счёт за воду'));
+  expect(binary.mock.calls[0][0]).not.toContain('description');
+});

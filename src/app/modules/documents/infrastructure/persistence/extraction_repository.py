@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.documents.domain.entities import Document, Visibility
 from app.modules.documents.domain.extraction import Extraction, ExtractionStatus
-from app.modules.documents.infrastructure.repository import documents, to_document
+from app.modules.documents.infrastructure.persistence.repository import documents, to_document
 from app.modules.identity.application.contracts import Principal
 from app.modules.shared.domain.errors import ApplicationError
 

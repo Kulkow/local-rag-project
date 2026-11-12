@@ -549,6 +549,8 @@ export interface components {
             filename: string;
             /** Title */
             title?: string | null;
+            /** Description */
+            description?: string | null;
             /** Content Type */
             content_type: string;
             /** Size Bytes */
@@ -1438,6 +1440,7 @@ export interface operations {
             };
             header: {
                 "Idempotency-Key": string;
+                "X-Document-Description"?: string | null;
             };
             path?: never;
             cookie?: never;

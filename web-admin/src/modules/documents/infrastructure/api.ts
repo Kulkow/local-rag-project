@@ -66,7 +66,14 @@ export async function downloadDocument(token: string, id: string, filename: stri
  try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
 
-export async function previewPdf(token: string, id: string): Promise<void> {
+export const originalPreviewTypes = ['application/pdf', 'image/png', 'image/jpeg'];
+
+export function previewPdf(token: string, id: string): Promise<void> {
+ return previewOriginal(token, id, 'application/pdf');
+}
+
+export async function previewOriginal(token: string, id: string, contentType: string): Promise<void> {
+ if (!originalPreviewTypes.includes(contentType)) throw new Error('Просмотр оригинала доступен для PDF, PNG и JPEG.');
  // Open synchronously from the click, before fetch, so popup blockers allow the tab.
  const tab = window.open('about:blank', '_blank');
  if (!tab) throw new Error('Браузер заблокировал вкладку. Разрешите открытие вкладок для этого сайта.');
@@ -79,8 +86,8 @@ export async function previewPdf(token: string, id: string): Promise<void> {
   if (!response.ok) { await readResponse<never>(response, token); return; }
   const content = await response.blob();
   if (tab.closed) return;
-  // The download endpoint deliberately returns octet-stream; use PDF for browser viewing.
-  url = URL.createObjectURL(new Blob([content], { type: 'application/pdf' }));
+  // The protected download returns octet-stream; allow only passive preview formats.
+  url = URL.createObjectURL(new Blob([content], { type: contentType }));
   tab.location.replace(url);
   const previewUrl = url;
   const cleanup = window.setInterval(() => {

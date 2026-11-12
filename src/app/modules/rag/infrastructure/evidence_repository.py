@@ -7,9 +7,9 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import TSQUERY, TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.documents.infrastructure.chunk_repository import chunks_table, indexes
-from app.modules.documents.infrastructure.repository import documents
-from app.modules.documents.infrastructure.family_access import ScopedFamilyAccess
+from app.modules.documents.infrastructure.persistence.chunk_repository import chunks_table, indexes
+from app.modules.documents.infrastructure.persistence.repository import documents
+from app.modules.documents.infrastructure.access.family_access import ScopedFamilyAccess
 from app.modules.families.infrastructure.persistence import family_members
 from app.modules.identity.application.contracts import Principal
 from app.modules.identity.infrastructure.repository import users, SqlIdentityRepository

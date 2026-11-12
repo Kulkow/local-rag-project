@@ -1,3 +1,4 @@
+from urllib.parse import unquote
 import asyncio
 from datetime import datetime
 from typing import Annotated
@@ -38,6 +39,7 @@ class DocumentView(BaseModel):
     owner_id: UUID
     filename: str
     title: str | None = None
+    description: str | None = None
     content_type: str
     size_bytes: int
     checksum: str
@@ -77,6 +79,9 @@ async def upload(
     idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
     filename: str = Query(min_length=1, max_length=255),
     visibility: Visibility = Visibility.PRIVATE,
+    description: Annotated[
+        str | None, Header(alias="X-Document-Description", max_length=24000)
+    ] = None,
 ) -> DocumentView:
     # Authorization precedes body consumption; the application repeats this check.
     await use_case.access.authorize(actor, family_id, write=False)
@@ -114,6 +119,7 @@ async def upload(
             bytes(content),
             idempotency_key,
             visibility,
+            unquote(description) if description is not None else None,
         )
         response.headers["Location"] = f"/documents?family_id={family_id}"
         return DocumentView.model_validate(document)

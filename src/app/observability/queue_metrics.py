@@ -11,9 +11,9 @@ from redis.asyncio import Redis
 from app.core.settings import Settings
 from app.infrastructure.db.connection import create_engine
 from app.modules.documents.domain.processing import ProcessingStatus
-from app.modules.documents.infrastructure.processing_repository import jobs
-from app.modules.documents.infrastructure.chunk_repository import indexes
-from app.modules.documents.infrastructure.processing_worker import HEARTBEAT_KEY
+from app.modules.documents.infrastructure.persistence.processing_repository import jobs
+from app.modules.documents.infrastructure.persistence.chunk_repository import indexes
+from app.modules.documents.infrastructure.processing.processing_worker import HEARTBEAT_KEY
 
 
 def render_queue_metrics(

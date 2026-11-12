@@ -15,7 +15,7 @@ from app.modules.documents.domain.extraction import (
     MAX_TEXT_BYTES,
     PageText,
 )
-from app.modules.documents.infrastructure.pdf_ocr import recognize_page
+from app.modules.documents.infrastructure.extraction.ocr.pdf_ocr import recognize_page
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
     try:
         from pypdf import PdfReader
         import pypdf.filters
-        from app.modules.documents.infrastructure.pdf_images import page_has_images
+        from app.modules.documents.infrastructure.extraction.pdf.pdf_images import page_has_images
 
         pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH = 16 * 1024 * 1024
         pypdf.filters.JBIG2_MAX_OUTPUT_LENGTH = 16 * 1024 * 1024

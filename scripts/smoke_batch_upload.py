@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.settings import Settings
 from app.infrastructure.db.connection import create_engine
-from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
-from app.modules.documents.infrastructure.repository import documents
+from app.modules.documents.infrastructure.storage.object_storage import MinioOriginalStorage
+from app.modules.documents.infrastructure.persistence.repository import documents
 from app.modules.families.infrastructure.persistence import families, family_members, persons
 from app.modules.identity.domain.entities import Principal, User, UserRole
 from app.modules.identity.infrastructure.repository import SqlIdentityRepository, users

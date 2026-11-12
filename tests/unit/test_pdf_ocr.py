@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.modules.documents.domain.extraction import ExtractionFailure, MAX_TEXT_BYTES
-from app.modules.documents.infrastructure.pdf_ocr import recognize_page
+from app.modules.documents.infrastructure.extraction.ocr.pdf_ocr import recognize_page
 
 
 @pytest.mark.parametrize(

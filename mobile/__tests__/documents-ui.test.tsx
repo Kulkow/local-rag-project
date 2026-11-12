@@ -1,5 +1,5 @@
 import React from 'react';
-import {Image, Text} from 'react-native';
+import {Image, Text, TextInput} from 'react-native';
 import ReactTestRenderer, {act} from 'react-test-renderer';
 import type {Document, LocalFile} from '../src/api/types';
 import {UploadScreen} from '../src/documents/UploadScreen';
@@ -46,7 +46,7 @@ it('previews a camera image, uploads it with the selected ACL and removes it aft
   await press('Для семьи');
   await press('Сфотографировать документ');
   expect(renderer.root.findByType(Image).props.source).toEqual({uri: photo.uri});
-  await press('Отправить в RAG');
+  await press('Отправить в обработку');
   expect(session.api().upload).toHaveBeenCalledWith(photo, 'family', 'family');
   expect(session.api().process).toHaveBeenCalledWith('image');
   expect(discard).toHaveBeenCalledWith(photo); expect(onSaved).toHaveBeenCalledTimes(1);
@@ -58,13 +58,13 @@ it('cancels a prepared photo without uploading it', async () => {
   await render(<UploadScreen family="family" onSaved={jest.fn()}/>);
   await press('Сфотографировать документ'); await press('Отменить выбор');
   expect(discard).toHaveBeenCalledWith(photo); expect(session.api().upload).not.toHaveBeenCalled();
-  expect(buttons('Отправить в RAG')).toHaveLength(0);
+  expect(buttons('Отправить в обработку')).toHaveLength(0);
 });
 
 it('preserves the original on a queue error and retries only scheduling', async () => {
   jest.mocked(session.api().process).mockRejectedValueOnce(new Error('Очередь недоступна'));
   await render(<UploadScreen family="family" onSaved={jest.fn()}/>);
-  await press('Сфотографировать документ'); await press('Отправить в RAG');
+  await press('Сфотографировать документ'); await press('Отправить в обработку');
   expect(text()).toContain('Оригинал уже сохранён');
   expect(discard).not.toHaveBeenCalledWith(photo);
   await press('Повторить постановку в очередь');
@@ -74,7 +74,7 @@ it('preserves the original on a queue error and retries only scheduling', async 
 it('keeps the form usable after camera cancellation and reports permission errors', async () => {
   jest.mocked(takePhoto).mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('Камера недоступна'));
   await render(<UploadScreen family="family" onSaved={jest.fn()}/>);
-  await press('Сфотографировать документ'); expect(buttons('Отправить в RAG')).toHaveLength(0);
+  await press('Сфотографировать документ'); expect(buttons('Отправить в обработку')).toHaveLength(0);
   await press('Сфотографировать документ');
   expect(text()).toContain('Камера недоступна'); expect(session.api().upload).not.toHaveBeenCalled();
 });
@@ -99,4 +99,33 @@ it('does not offer image processing controls for another member’s document', a
   jest.mocked(session.api().documents).mockResolvedValue([{...saved, owner_id: 'someone-else', visibility: 'family'}]);
   await render(<DocumentsScreen family="family" refresh={0}/>);
   expect(buttons('Поставить в очередь')).toHaveLength(0);
+});
+
+ it('keeps multiple photos and individual comments on the upload screen after sending', async () => {
+  const next = {...photo, key: 'next', uri: 'file:///cache/next.jpg', name: 'next.jpg'};
+  jest.mocked(takePhoto).mockResolvedValueOnce(photo).mockResolvedValueOnce(next).mockResolvedValueOnce({...next, key: 'third'});
+  await render(<UploadScreen family="family" onSaved={jest.fn()}/>);
+  await press('Сфотографировать документ');
+  await act(async () => {renderer.root.findByType(TextInput).props.onChangeText('Первый документ');});
+  await press('Сфотографировать документ');
+  expect(renderer.root.findAllByType(Image)).toHaveLength(2);
+  await act(async () => {renderer.root.findAllByType(TextInput)[1].props.onChangeText('Второй документ');});
+  await press('Отправить в обработку');
+  expect(session.api().upload).toHaveBeenNthCalledWith(1, photo, 'family', 'private', 'Первый документ');
+  expect(session.api().upload).toHaveBeenNthCalledWith(2, next, 'family', 'private', 'Второй документ');
+  expect(renderer.root.findAllByType(Image)).toHaveLength(0);
+  await press('Сфотографировать документ');
+  expect(renderer.root.findAllByType(Image)).toHaveLength(1);
+});
+
+it('does not resend completed photos when a later photo fails scheduling', async () => {
+  jest.mocked(takePhoto).mockResolvedValueOnce(photo).mockResolvedValueOnce({...photo, key: 'next'});
+  jest.mocked(session.api().process).mockResolvedValueOnce({status: 'queued'} as never).mockRejectedValueOnce(new Error('Очередь недоступна'));
+  await render(<UploadScreen family="family" onSaved={jest.fn()}/>);
+  await press('Сфотографировать документ'); await press('Сфотографировать документ');
+  await press('Отправить в обработку');
+  expect(renderer.root.findAllByType(Image)).toHaveLength(1);
+  await press('Повторить постановку в очередь');
+  expect(session.api().upload).toHaveBeenCalledTimes(2);
+  expect(session.api().process).toHaveBeenCalledTimes(3);
 });

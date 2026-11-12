@@ -10,8 +10,8 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 
-from app.modules.documents.infrastructure.pdf_extractor import PdfExtractor
-from app.modules.documents.infrastructure.image_extractor import ImageExtractor
+from app.modules.documents.infrastructure.extraction.pdf.pdf_extractor import PdfExtractor
+from app.modules.documents.infrastructure.extraction.images.image_extractor import ImageExtractor
 from app.modules.documents.domain.extraction import ExtractionFailure, PageText
 
 

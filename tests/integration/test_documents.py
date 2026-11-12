@@ -5,6 +5,7 @@ from dataclasses import replace
 from collections.abc import AsyncIterator, Callable
 import os
 from uuid import uuid4
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -16,8 +17,11 @@ from app.core.settings import Settings
 from app.main import create_app
 from app.modules.documents.domain.entities import DocumentStatus
 from app.modules.documents.application.upload import UploadDocument
-from app.modules.documents.infrastructure.repository import SqlDocumentRepository, documents
-from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
+from app.modules.documents.infrastructure.persistence.repository import (
+    SqlDocumentRepository,
+    documents,
+)
+from app.modules.documents.infrastructure.storage.object_storage import MinioOriginalStorage
 from app.modules.families.infrastructure.persistence import families, family_members, persons
 from app.modules.identity.domain.entities import Principal, User, UserRole
 from app.modules.identity.infrastructure.repository import SqlIdentityRepository, users
@@ -34,7 +38,7 @@ async def pause_live_document_consumer() -> AsyncIterator[None]:
     if not url:
         yield
         return
-    from app.modules.documents.infrastructure.processing_worker import PROCESSING_LOCK
+    from app.modules.documents.infrastructure.processing.processing_worker import PROCESSING_LOCK
 
     engine = create_async_engine(url)
     try:
@@ -126,7 +130,7 @@ async def test_document_upload_api_acl_idempotency_and_failures() -> None:
                 ExtractDocument,
                 ReadExtractedPages,
             )
-            from app.modules.documents.infrastructure.extraction_repository import (
+            from app.modules.documents.infrastructure.persistence.extraction_repository import (
                 SqlExtractionRepository,
             )
 
@@ -161,6 +165,7 @@ async def test_document_upload_api_acl_idempotency_and_failures() -> None:
                     **headers[1],
                     "Content-Type": "application/pdf",
                     "Idempotency-Key": key,
+                    "X-Document-Description": quote("Описание документа"),
                 }
                 assert (await client.post(path, content=PDF)).status_code == 401
                 forbidden = f"/documents?family_id={other_family}&filename=guide.pdf"
@@ -177,11 +182,18 @@ async def test_document_upload_api_acl_idempotency_and_failures() -> None:
                 assert response.status_code == 201, response.text
                 document_id = response.json()["id"]
                 assert response.json()["status"] == "uploaded"
+                assert response.json()["description"] == "Описание документа"
                 assert response.headers["X-Request-ID"]
                 assert "object_key" not in response.json()
                 assert next(iter(storage.objects.values())) == PDF
                 replay = await client.post(path, headers=upload_headers, content=PDF)
                 assert replay.status_code == 201 and replay.json()["id"] == document_id
+                changed_description = await client.post(
+                    path,
+                    headers={**upload_headers, "X-Document-Description": quote("Другое")},
+                    content=PDF,
+                )
+                assert changed_description.status_code == 409
                 assert len(storage.objects) == 1
                 # New keys/names/ACL cannot bypass per-owner content deduplication.
                 for duplicate_path in (
@@ -238,6 +250,7 @@ async def test_document_upload_api_acl_idempotency_and_failures() -> None:
                 unchanged = (await repository.list(actors[1], family, 0, 20))[0]
                 assert unchanged.status == DocumentStatus.UPLOADED
                 assert unchanged.error_code is None
+                assert unchanged.description == "Описание документа"
                 assert (
                     await client.post(f"/documents/{document_id}/extract", headers=headers[2])
                 ).status_code == 404

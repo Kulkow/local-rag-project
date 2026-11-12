@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
+from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
 
@@ -101,3 +102,21 @@ def image_from_pdf(tmp_path: Path) -> Callable[[bytes, str], bytes]:
         return (tmp_path / f"image.{suffix}").read_bytes()
 
     return render
+
+
+@pytest.fixture
+def russian_image() -> Image.Image:
+    """Redistributable synthetic text using the font installed by the Docker base."""
+    image = Image.new("RGB", (1400, 500), "white")
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 40)
+    draw = ImageDraw.Draw(image)
+    for y, line in enumerate(
+        [
+            "Заявление на получение справки",
+            "Договор аренды квартиры",
+            "Оплата услуг за ноябрь 2026 года",
+            "Номер документа: 12345.",
+        ]
+    ):
+        draw.text((45, 60 + y * 85), line, font=font, fill="black")
+    return image

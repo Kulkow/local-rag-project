@@ -1,13 +1,19 @@
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 from app.modules.documents.domain.entities import validate_file
 from app.modules.documents.domain.extraction import ExtractionFailure
-from app.modules.documents.infrastructure.extractors import default_extractors
-from app.modules.documents.infrastructure.image_extractor import ImageExtractor
+from app.modules.documents.infrastructure.extraction.extractors import default_extractors
+from app.modules.documents.infrastructure.extraction.images.image_extractor import ImageExtractor
 from app.modules.shared.domain.errors import ApplicationError
 from test_pdf_extractor import synthetic_pdf
+
+
+@pytest.fixture(autouse=True)
+def no_neural_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OCR_MODELS_DIR", str(tmp_path / "missing-models"))
 
 
 @pytest.mark.parametrize("extension", ["png", "jpg", "jpeg"])

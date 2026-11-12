@@ -15,16 +15,20 @@ from app.modules.documents.application.extraction import (
 )
 from app.modules.documents.application.indexing import IndexDocument
 from app.modules.documents.domain.chunking import ChunkingConfig
-from app.modules.documents.infrastructure.chunk_repository import SqlChunkIndex
-from app.modules.documents.infrastructure.embedding_provider import OllamaEmbeddings
-from app.modules.documents.infrastructure.vector_index import QdrantIndex
+from app.modules.documents.infrastructure.persistence.chunk_repository import SqlChunkIndex
+from app.modules.documents.infrastructure.indexing.embedding_provider import OllamaEmbeddings
+from app.modules.documents.infrastructure.indexing.vector_index import QdrantIndex
 from app.modules.documents.application.processing import ProcessNextDocument
 from app.modules.documents.domain.processing import ProcessingJob
-from app.modules.documents.infrastructure.extraction_repository import SqlExtractionRepository
-from app.modules.documents.infrastructure.family_access import ScopedFamilyAccess
-from app.modules.documents.infrastructure.object_storage import MinioOriginalStorage
-from app.modules.documents.infrastructure.extractors import default_extractors
-from app.modules.documents.infrastructure.processing_repository import SqlProcessingRepository
+from app.modules.documents.infrastructure.persistence.extraction_repository import (
+    SqlExtractionRepository,
+)
+from app.modules.documents.infrastructure.access.family_access import ScopedFamilyAccess
+from app.modules.documents.infrastructure.storage.object_storage import MinioOriginalStorage
+from app.modules.documents.infrastructure.extraction.extractors import default_extractors
+from app.modules.documents.infrastructure.persistence.processing_repository import (
+    SqlProcessingRepository,
+)
 from app.modules.identity.infrastructure.repository import SqlIdentityRepository
 from app.modules.shared.domain.errors import ApplicationError
 

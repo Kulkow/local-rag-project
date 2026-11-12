@@ -7,7 +7,7 @@ import Documents from '../src/modules/documents/presentation/DocumentsView.vue';
 import { useAuth } from '../src/modules/identity/presentation/auth-store';
 import * as api from '../src/modules/documents/infrastructure/api';
 import { listFamilies } from '../src/modules/families/infrastructure/api';
-vi.mock('../src/modules/documents/infrastructure/api', () => ({ previewPdf: vi.fn(), listDocuments: vi.fn(), uploadDocument: vi.fn(), extractionFormats: vi.fn(), enqueueDocument: vi.fn(), processingStatus: vi.fn(), indexStatus: vi.fn(), reindexDocument: vi.fn(), readPages: vi.fn() }));
+vi.mock('../src/modules/documents/infrastructure/api', () => ({ previewPdf: vi.fn(), previewOriginal: vi.fn(), originalPreviewTypes: ['application/pdf', 'image/png', 'image/jpeg'], listDocuments: vi.fn(), uploadDocument: vi.fn(), extractionFormats: vi.fn(), enqueueDocument: vi.fn(), processingStatus: vi.fn(), indexStatus: vi.fn(), reindexDocument: vi.fn(), readPages: vi.fn() }));
 vi.mock('../src/modules/families/infrastructure/api', () => ({ listFamilies: vi.fn(), login: vi.fn(), request: vi.fn(), ApiError: class extends Error {} }));
 let pinia: ReturnType<typeof createPinia>;
 let wrapper: ReturnType<typeof mount> | undefined;
@@ -39,7 +39,7 @@ it.each(['image/png', 'image/jpeg'])('uploads %s and schedules OCR for a member'
  await chooseFile(view, file); await view.find('form').trigger('submit'); await flushPromises();
  expect(api.uploadDocument).toHaveBeenCalledWith('jwt', file, 'family-id', 'private', expect.any(String));
  expect(api.enqueueDocument).toHaveBeenCalledWith('jwt', file.name);
- expect(view.text()).toContain('В очереди'); expect(view.text()).toContain('Tesseract');
+ expect(view.text()).toContain('В очереди'); expect(view.text()).toContain('поддерживается русский и английский текст');
 });
 it('requires sign-in before requesting documents', async () => {
  wrapper = mount(Documents, { global: { plugins: [pinia, PrimeVue] } }); await flushPromises();
@@ -259,12 +259,12 @@ it('opens an uploaded PDF original for a member even when extraction is unavaila
  vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc' }]);
  const view = mountPage('member'); await flushPromises();
  await view.find('button[aria-label="Открыть оригинал guide.pdf"]').trigger('click'); await flushPromises();
- expect(api.previewPdf).toHaveBeenCalledWith('jwt', 'doc');
- vi.mocked(api.previewPdf).mockRejectedValue(new Error('Document not found'));
+ expect(api.previewOriginal).toHaveBeenCalledWith('jwt', 'doc', 'application/pdf');
+ vi.mocked(api.previewOriginal).mockRejectedValue(new Error('Document not found'));
  await view.find('button[aria-label="Открыть оригинал guide.pdf"]').trigger('click'); await flushPromises();
  expect(view.find('[role="alert"]').text()).toContain('Document not found');
 });
-it('does not offer PDF preview for unfinished uploads or other formats', async () => {
+it('does not offer original preview for unfinished uploads or unsupported formats', async () => {
  vi.mocked(api.listDocuments).mockResolvedValue([
   { ...uploadedFile(new File(['pdf'], 'pending.pdf', { type: 'application/pdf' })), status: 'uploading' },
   { ...uploadedFile(new File(['html'], 'guide.html', { type: 'text/html' })) },
@@ -272,7 +272,7 @@ it('does not offer PDF preview for unfinished uploads or other formats', async (
  ]);
  const view = mountPage(); await flushPromises();
  expect(view.findAll('button').some(button => button.text().includes('Открыть оригинал'))).toBe(false);
- expect(api.previewPdf).not.toHaveBeenCalled();
+ expect(api.previewOriginal).not.toHaveBeenCalled();
 });
 it('keeps technical metadata collapsed while showing the title, access and primary actions', async () => {
  vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pdf'], 'guide.pdf', { type: 'application/pdf' })), id: 'doc', title: 'Регламент работы' }]);
@@ -335,4 +335,16 @@ it('ignores a text response after the popup has been closed', async () => {
  release({ total_pages: 1, pages: [{ page_number: 1, text: 'Late response' }] }); await flushPromises();
  expect(view.find('pre').exists()).toBe(false);
  expect(view.text()).not.toContain('Late response');
+});
+
+it.each([['scan.png', 'image/png'], ['scan.jpg', 'image/jpeg'], ['scan.jpeg', 'image/jpeg']])('opens the original %s before OCR or indexing is ready', async (filename, contentType) => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pixels'], filename, { type: contentType })), id: 'image' }]);
+ const view = mountPage('member'); await flushPromises();
+ await view.find(`button[aria-label="Открыть оригинал ${filename}"]`).trigger('click'); await flushPromises();
+ expect(api.previewOriginal).toHaveBeenCalledWith('jwt', 'image', contentType);
+});
+it.each(['uploading', 'upload_failed'] as const)('does not offer an image original in state %s', async status => {
+ vi.mocked(api.listDocuments).mockResolvedValue([{ ...uploadedFile(new File(['pixels'], 'scan.png', { type: 'image/png' })), status }]);
+ const view = mountPage('member'); await flushPromises();
+ expect(view.find('button[aria-label="Открыть оригинал scan.png"]').exists()).toBe(false);
 });

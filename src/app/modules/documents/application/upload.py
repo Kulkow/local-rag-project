@@ -45,8 +45,12 @@ class UploadDocument:
         content: bytes,
         idempotency_key: UUID,
         visibility: Visibility,
+        description: str | None = None,
     ) -> Document:
         await self.access.authorize(actor, family_id, write=False)
+        description = description.strip() or None if description is not None else None
+        if description is not None and (len(description) > 2000 or "\x00" in description):
+            raise ApplicationError("invalid", "Description must contain at most 2000 characters")
         mime, checksum = await asyncio.to_thread(validate_file, filename, content_type, content)
         document_id = uuid5(NAMESPACE_URL, f"rag-upload:{actor.id}:{idempotency_key}")
         document = Document(
@@ -59,6 +63,7 @@ class UploadDocument:
             checksum,
             f"originals/{family_id}/{document_id}",
             visibility,
+            description=description,
         )
         document, should_upload = await self.repository.reserve(document)
         if not should_upload:

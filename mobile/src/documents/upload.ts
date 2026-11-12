@@ -25,11 +25,15 @@ export interface UploadDraft {
   family: string;
   visibility: Visibility;
   saved?: Document;
+  description?: string;
+  attempted?: boolean;
 }
 
 export async function sendDraft(api: Api, draft: UploadDraft, active: () => boolean): Promise<string> {
   validateFile(draft.file);
-  if (!draft.saved) {draft.saved = await api.upload(draft.file, draft.family, draft.visibility);}
+  if ((draft.description?.trim().length ?? 0) > 2000) {throw new Error('Описание — не более 2000 символов.');}
+  draft.attempted = true;
+  if (!draft.saved) {draft.saved = await api.upload(draft.file, draft.family, draft.visibility, ...(draft.description ? [draft.description] : []));}
   if (!active()) {return '';}
   // Retry only scheduling after an upload has been acknowledged.
   const formats = await api.formats();

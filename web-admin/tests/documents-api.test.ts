@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { uploadDocument, downloadDocument, previewPdf } from '../src/modules/documents/infrastructure/api';
+import { uploadDocument, downloadDocument, previewPdf, previewOriginal } from '../src/modules/documents/infrastructure/api';
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it('sends the original File as bounded binary transport with an idempotency key', async () => {
  const file = new File(['%PDF-1.4\n%%EOF'], 'пример & guide.pdf', { type: 'application/pdf' });
@@ -41,16 +41,17 @@ it('reports forbidden downloads without saving an error as a file', async () => 
  expect(blob).not.toHaveBeenCalled();
 });
 
-it('opens a PDF tab before fetching and revokes its URL only after the tab closes', async () => {
+it.each(['application/pdf', 'image/png', 'image/jpeg'])('opens %s before fetching and releases its URL after closing', async contentType => {
  vi.useFakeTimers();
  const tab = { opener: window, closed: false, location: { replace: vi.fn() }, close: vi.fn() };
  const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
  const NativeURL = URL; const createObjectURL = vi.fn().mockReturnValue('blob:pdf'); const revokeObjectURL = vi.fn();
  vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = createObjectURL; static revokeObjectURL = revokeObjectURL; });
  const fetch = vi.fn().mockImplementation(async () => { expect(open).toHaveBeenCalledOnce(); return { ok: true, blob: async () => new Blob(['%PDF-1.4']) }; }); vi.stubGlobal('fetch', fetch);
- await previewPdf('jwt', 'doc');
+ if (contentType === 'application/pdf') await previewPdf('jwt', 'doc');
+ else await previewOriginal('jwt', 'doc', contentType);
  expect(tab.opener).toBeNull(); expect(tab.location.replace).toHaveBeenCalledWith('blob:pdf');
- expect(createObjectURL.mock.calls[0][0].type).toBe('application/pdf');
+ expect(createObjectURL.mock.calls[0][0].type).toBe(contentType);
  expect(fetch).toHaveBeenCalledWith('/api/documents/doc/download', expect.objectContaining({ headers: { Authorization: 'Bearer jwt' } }));
  vi.advanceTimersByTime(1000); expect(revokeObjectURL).not.toHaveBeenCalled();
  tab.closed = true; vi.advanceTimersByTime(1000); expect(revokeObjectURL).toHaveBeenCalledWith('blob:pdf');
@@ -61,4 +62,18 @@ it('closes the preview tab on denied access and reports popup blocking', async (
  await expect(previewPdf('jwt', 'doc')).rejects.toThrow('Document not found'); expect(close).toHaveBeenCalledOnce();
  open.mockReturnValue(null); fetch.mockClear();
  await expect(previewPdf('jwt', 'doc')).rejects.toThrow('заблокировал'); expect(fetch).not.toHaveBeenCalled();
+});
+
+it('closes an image tab when access is denied and never displays the error body', async () => {
+ const tab = { opener: window, close: vi.fn(), location: { replace: vi.fn() } };
+ vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+ const blob = vi.fn();
+ vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, blob, json: async () => ({ detail: 'Document not found' }) }));
+ await expect(previewOriginal('jwt', 'private-image', 'image/png')).rejects.toThrow('Document not found');
+ expect(tab.close).toHaveBeenCalledOnce(); expect(tab.location.replace).not.toHaveBeenCalled(); expect(blob).not.toHaveBeenCalled();
+});
+it.each(['text/html', 'image/svg+xml'])('rejects active or unsupported preview type %s', async contentType => {
+ const open = vi.spyOn(window, 'open'); const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+ await expect(previewOriginal('jwt', 'doc', contentType)).rejects.toThrow('PDF, PNG и JPEG');
+ expect(open).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
 });

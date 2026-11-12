@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.modules.documents.application.indexing import IndexRecord
 from app.modules.documents.domain.chunking import ChunkingConfig, chunk_pages
 from app.modules.documents.domain.extraction import PageText
-from app.modules.documents.infrastructure.chunk_repository import SqlChunkIndex, chunks_table
+from app.modules.documents.infrastructure.persistence.chunk_repository import (
+    SqlChunkIndex,
+    chunks_table,
+)
 from app.modules.shared.domain.errors import ApplicationError
 
 

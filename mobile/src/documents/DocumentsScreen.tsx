@@ -42,6 +42,7 @@ function DocumentCard({document, revision}: {document: Document; revision: numbe
   }
   return <Card>
     <Text style={s.heading}>{document.title || document.filename}</Text>
+    {!!document.description && <Text style={s.text}>{document.description}</Text>}
     {!!document.title && <Text style={s.muted}>{document.filename}</Text>}
     <Text style={s.muted}>{(document.size_bytes / 1024 / 1024).toFixed(2)} MiB · {document.visibility === 'private' ? 'Личный' : 'Для семьи'}</Text>
     <Text style={s.badge}>{index?.status === 'indexed' ? 'Доступен для поиска' : job ? jobs[job.status] ?? job.status : document.status === 'uploaded' ? 'Оригинал сохранён' : document.status}</Text>

@@ -61,7 +61,9 @@ async def test_unknown_error_is_sanitized() -> None:
 
 async def test_worker_rechecks_active_requester_before_accessing_original() -> None:
     from unittest.mock import MagicMock, patch
-    from app.modules.documents.infrastructure.processing_worker import ExtractQueuedDocument
+    from app.modules.documents.infrastructure.processing.processing_worker import (
+        ExtractQueuedDocument,
+    )
 
     factory = MagicMock()
     actor_repository = AsyncMock()
@@ -69,7 +71,7 @@ async def test_worker_rechecks_active_requester_before_accessing_original() -> N
     processor = ExtractQueuedDocument(factory, AsyncMock(), AsyncMock())
     processor.use_case = AsyncMock()
     with patch(
-        "app.modules.documents.infrastructure.processing_worker.SqlIdentityRepository",
+        "app.modules.documents.infrastructure.processing.processing_worker.SqlIdentityRepository",
         return_value=actor_repository,
     ):
         with pytest.raises(ApplicationError) as error:

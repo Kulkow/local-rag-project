@@ -24,3 +24,7 @@ lint-python:
 .PHONY: bootstrap-admin
 bootstrap-admin:
 	docker compose run --rm --no-deps api python -m app.modules.identity.bootstrap
+
+.PHONY: ocr-models
+ocr-models:
+	docker compose --profile tools run --rm --no-deps ocr-models

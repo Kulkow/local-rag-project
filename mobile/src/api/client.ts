@@ -93,7 +93,7 @@ export class Api {
   index(id: string): Promise<Index> {return this.request(`/documents/${encodeURIComponent(id)}/index`);}
   process(id: string): Promise<Job> {return this.request(`/documents/${encodeURIComponent(id)}/process`, 'POST');}
 
-  async upload(file: LocalFile, family: string, visibility: Visibility): Promise<Document> {
+  async upload(file: LocalFile, family: string, visibility: Visibility, description?: string): Promise<Document> {
     const query = `family_id=${encodeURIComponent(family)}&filename=${encodeURIComponent(file.name)}&visibility=${visibility}`;
     let result: BinaryResponse;
     try {
@@ -101,6 +101,7 @@ export class Api {
         Authorization: `Bearer ${this.token}`,
         'Content-Type': file.type,
         'Idempotency-Key': file.key,
+        ...(description?.trim() ? {'X-Document-Description': encodeURIComponent(description.trim())} : {}),
       }, file.uri);
     } catch {throw new Error('Не удалось отправить файл. Повторите с тем же ключом; копия не будет создана.');}
     let data: unknown;

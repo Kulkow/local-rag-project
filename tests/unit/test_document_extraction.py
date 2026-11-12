@@ -1,6 +1,7 @@
 """TDD contract: pluggable extractors and durable, authorized PDF extraction."""
 
 import hashlib
+import json
 from dataclasses import replace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -209,3 +210,18 @@ async def test_member_owner_can_process_their_upload(setup: tuple) -> None:
     result = await use_case.execute(member, repository.document.id)
     assert result.status == ExtractionStatus.EXTRACTED
     access.authorize.assert_awaited_once_with(member, repository.document.family_id, write=False)
+
+
+async def test_ocr_artifact_records_actual_fallback_engine(setup: tuple) -> None:
+    use_case, repository, storage, _, extractor, actor = setup
+    extractor.extract = AsyncMock(
+        return_value=ExtractedContent(
+            (PageText(1, "Распознанный текст"),),
+            ocr_engine="tesseract",
+            ocr_fallback_reason="paddle_timeout",
+        )
+    )
+    await use_case.execute(actor, repository.document.id)
+    payload = json.loads(storage.put.call_args.args[1])
+    assert payload["ocr_engine"] == "tesseract"
+    assert payload["ocr_fallback_reason"] == "paddle_timeout"

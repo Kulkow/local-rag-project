@@ -790,6 +790,23 @@
               "format": "uuid",
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "name": "X-Document-Description",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 24000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Document-Description"
+            }
           }
         ],
         "responses": {
@@ -2095,6 +2112,17 @@
               }
             ],
             "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "content_type": {
             "type": "string",
